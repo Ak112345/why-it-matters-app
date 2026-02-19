@@ -2,10 +2,5 @@
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
   "installCommand": "npm ci",
-  "framework": "nextjs",
-  "env": {
-    "NEXTAUTH_URL": {
-      "description": "URL for authentication callback"
-    }
-  }
+  "framework": "nextjs"
 }
