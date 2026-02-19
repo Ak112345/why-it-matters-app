@@ -3,11 +3,9 @@
   "devCommand": "npm run dev",
   "installCommand": "npm ci",
   "framework": "nextjs",
-  "env": [
-    {
-      "key": "NEXTAUTH_URL",
-      "description": "URL for authentication callback",
-      "value": ""
+  "env": {
+    "NEXTAUTH_URL": {
+      "description": "URL for authentication callback"
     }
-  ]
+  }
 }
