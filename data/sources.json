@@ -1,0 +1,31 @@
+{
+  "video": [
+    { "name": "Pexels Videos", "url": "https://www.pexels.com/videos/", "license": "CC0", "notes": "Short clips, HD/4K, b-roll." },
+    { "name": "Pixabay Videos", "url": "https://pixabay.com/videos/", "license": "CC0", "notes": "Large library, diverse footage." },
+    { "name": "Videvo", "url": "https://www.videvo.net", "license": "Mixed", "notes": "Check per-clip license." },
+    { "name": "Videezy", "url": "https://www.videezy.com", "license": "Mixed", "notes": "Free clips, some attribution required." },
+    { "name": "Prelinger Archives", "url": "https://archive.org/details/prelinger", "license": "Public Domain", "notes": "Vintage newsreels and educational films." },
+    { "name": "NASA Media Library", "url": "https://images.nasa.gov", "license": "Public Domain", "notes": "Space and science footage." },
+    { "name": "Pond5 Public Domain", "url": "https://www.pond5.com/free", "license": "Public Domain", "notes": "Historical clips, no audio." },
+    { "name": "U.S. National Archives", "url": "https://catalog.archives.gov/", "license": "Public Domain", "notes": "Historical government footage." },
+    { "name": "DVIDS", "url": "https://www.dvidshub.net/", "license": "Public Domain", "notes": "U.S. DoD visual information." },
+    { "name": "NPS Multimedia", "url": "https://www.nps.gov/media/", "license": "Public Domain", "notes": "National Park Service assets." },
+    { "name": "C-SPAN Video Library", "url": "https://www.c-span.org/", "license": "Usage Restricted", "notes": "Use per C-SPAN guidelines." }
+  ],
+  "newspapers": [
+    { "name": "Chronicling America", "url": "https://chroniclingamerica.loc.gov", "license": "Public Domain", "notes": "Millions of historical newspaper pages." },
+    { "name": "LOC Free to Use", "url": "https://www.loc.gov/free-to-use/", "license": "Public Domain", "notes": "Curated historical images and newspapers." },
+    { "name": "Rawpixel Public Domain", "url": "https://www.rawpixel.com/category/53/public-domain", "license": "Public Domain", "notes": "Clean, restored scans." },
+    { "name": "Internet Archive Newspapers", "url": "https://archive.org/search?query=newspaper+clippings", "license": "Public Domain", "notes": "Collections and clippings." },
+    { "name": "Europeana Newspapers", "url": "https://newspapers.europeana.eu", "license": "Mixed", "notes": "International historical coverage." },
+    { "name": "Smithsonian Open Access", "url": "https://www.si.edu/openaccess", "license": "Open Access", "notes": "Millions of free assets." },
+    { "name": "NYPL Digital Collections", "url": "https://digitalcollections.nypl.org/", "license": "Mixed", "notes": "Check rights per item." },
+    { "name": "Public Domain Review", "url": "https://publicdomainreview.org/", "license": "Public Domain", "notes": "Curated sources." },
+    { "name": "Europeana Collections", "url": "https://www.europeana.eu/en/collections", "license": "Mixed", "notes": "Broader archival items." }
+  ],
+  "audio": [
+    { "name": "Free Music Archive", "url": "https://freemusicarchive.org/", "license": "Mixed", "notes": "Check per-track license." },
+    { "name": "Incompetech", "url": "https://incompetech.com/music/", "license": "Attribution", "notes": "Kevin MacLeod tracks." },
+    { "name": "YouTube Audio Library", "url": "https://www.youtube.com/audiolibrary", "license": "Free", "notes": "Safe for Shorts/Reels." }
+  ]
+}
