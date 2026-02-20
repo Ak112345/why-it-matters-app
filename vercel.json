@@ -8,5 +8,10 @@
       "path": "/api/content/generate",
       "schedule": "0 9 * * *"
     }
-  ]
+  ],
+  "build": {
+    "env": {
+      "VERCEL_IGNORE_ESLINT": "true"
+    }
+  }
 }

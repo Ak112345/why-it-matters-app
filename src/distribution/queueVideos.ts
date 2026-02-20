@@ -204,7 +204,7 @@ export async function getUpcomingPosts(limit: number = 20): Promise<any[]> {
       *,
       videos_final (
         *,
-        clips_analysis (*)
+        analysis (*)
       )
     `)
     .eq('status', 'pending')

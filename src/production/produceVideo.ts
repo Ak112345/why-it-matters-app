@@ -74,7 +74,12 @@ async function produceSingleVideo(
 
     console.log(`Producing video for analysis ${analysisId}...`);
 
-    // Download segment from storage
+      if (!segment.file_path) {
+        throw new Error(`Segment file_path is null for analysis ${analysisId}`);
+      }
+    // Log segment file path for debugging
+    console.log(`[DEBUG] segment.file_path: ${segment.file_path}`);
+    // Download segment from storage using segment.file_path as the object name
     const blob = await downloadFile('segmented_clips', segment.file_path);
     const arrayBuffer = await blob.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);

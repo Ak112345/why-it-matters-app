@@ -4,7 +4,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { ENV } from './env';
-import { Database } from '../types/database';
+import type { Database } from '../types/database.ts';
 
 /**
  * Server-side Supabase client with service role key
