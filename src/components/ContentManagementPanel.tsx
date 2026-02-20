@@ -63,12 +63,12 @@ export function ContentManagementPanel() {
 
   return (
     <>
-      {/* Director's Brief */}
+      {/* Director&apos;s Brief */}
       <section className="zone zone-primary content-management">
         <div className="panel director-brief">
           <div className="panel-header">
             <div>
-              <h2>📋 Director's Brief</h2>
+              <h2>📋 Director&apos;s Brief</h2>
               <p>Content status, quality gates, and production readiness</p>
             </div>
           </div>
@@ -230,12 +230,12 @@ export function ContentManagementPanel() {
           <div className="panel-header">
             <div>
               <h2>📅 Editorial Calendar</h2>
-              <p>This week's theme and content pillar distribution targets</p>
+              <p>This week&apos;s theme and content pillar distribution targets</p>
             </div>
           </div>
           <div className="calendar-info">
             <div className="theme-box">
-              <h3>This Week's Theme</h3>
+              <h3>This Week&apos;s Theme</h3>
               <p className="theme-name">
                 {brief && Object.keys(brief.byPillar).length > 0
                   ? 'Democracy & Participation'
