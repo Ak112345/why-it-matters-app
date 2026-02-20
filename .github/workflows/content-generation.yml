@@ -4,8 +4,10 @@ on:
   schedule:
     # Run at 9 AM UTC daily (morning post)
     - cron: '0 9 * * *'
-    # Run at 3 PM UTC daily (afternoon post)
-    - cron: '0 15 * * *'
+    # Run at 1 PM UTC daily (midday post)
+    - cron: '0 13 * * *'
+    # Run at 7 PM UTC daily (evening post)
+    - cron: '0 19 * * *'
   workflow_dispatch: # Allow manual triggers
 
 jobs:
@@ -14,5 +16,5 @@ jobs:
     steps:
       - name: Trigger content generation
         run: |
-          curl -X GET "${{ secrets.VERCEL_PRODUCTION_URL }}/api/content/generate" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+          curl -X GET "https://why-it-matters-app.vercel.app /api/content/generate" \
+            -H "Authorization: Bearer XI92wVtr0G9MHmvb5IQY7UAdXGKcx3nEVuQMDrO4iOQ="

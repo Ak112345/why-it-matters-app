@@ -27,7 +27,7 @@ export async function GET() {
         updated_at,
         videos_final (
           analysis_id,
-          clips_analysis (
+          analysis (
             hook
           )
         )
@@ -41,7 +41,7 @@ export async function GET() {
     } else if (failedPublishes) {
       for (const publish of failedPublishes) {
         const publishData = publish as any;
-        const hook = publishData.videos_final?.clips_analysis?.hook || 'Untitled';
+        const hook = publishData.videos_final?.analysis?.hook || 'Untitled';
         items.push({
           id: publishData.id,
           type: 'failed_publish',
@@ -93,7 +93,7 @@ export async function GET() {
         status,
         updated_at,
         analysis_id,
-        clips_analysis (
+        analysis (
           hook
         ),
         posting_queue (
@@ -110,7 +110,7 @@ export async function GET() {
     } else if (stuckVideos) {
       for (const video of stuckVideos) {
         const videoData = video as any;
-        const hook = videoData.clips_analysis?.hook || 'Untitled';
+        const hook = videoData.analysis?.hook || 'Untitled';
         const platform = videoData.posting_queue?.[0]?.platform || 'Unknown';
         items.push({
           id: videoData.id,

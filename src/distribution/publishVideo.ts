@@ -90,7 +90,7 @@ async function publishSingleVideo(
         *,
         videos_final (
           *,
-          clips_analysis (*)
+          analysis (*)
         )
       `)
       .eq('id', queueId)
@@ -113,7 +113,7 @@ async function publishSingleVideo(
     }
 
     const video = (queueItem as any).videos_final;
-    const analysis = video?.clips_analysis;
+    const analysis = video?.analysis;
 
     if (!video || !analysis) {
       throw new Error(`Video or analysis not found for queue item ${queueId}`);

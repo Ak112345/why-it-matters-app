@@ -69,7 +69,8 @@ export async function downloadFile(
 ) {
   const { data, error } = await supabase.storage.from(bucket).download(storagePath);
   if (error || !data) {
-    throw new Error('Download failed');
+    console.error(`Download failed: bucket=${bucket}, path=${storagePath}, error=${error?.message}`);
+    throw new Error(`Download failed: bucket=${bucket}, path=${storagePath}, error=${error?.message}`);
   }
   return data;
 }
