@@ -1,0 +1,18 @@
+name: Daily Content Generation
+
+on:
+  schedule:
+    # Run at 9 AM UTC daily (morning post)
+    - cron: '0 9 * * *'
+    # Run at 3 PM UTC daily (afternoon post)
+    - cron: '0 15 * * *'
+  workflow_dispatch: # Allow manual triggers
+
+jobs:
+  generate-content:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger content generation
+        run: |
+          curl -X GET "${{ secrets.VERCEL_PRODUCTION_URL }}/api/content/generate" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
