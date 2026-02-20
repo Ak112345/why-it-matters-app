@@ -4,7 +4,6 @@
  */
 
 // Supabase import reserved for future direct database operations
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { qualityStandards, brandVoice } from './editorialGuidelines';
 
 export interface ContentValidation {

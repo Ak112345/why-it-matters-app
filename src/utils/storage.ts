@@ -1,6 +1,5 @@
 import { supabase } from './supabaseClient';
 import fs from 'fs';
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 
 async function uploadToBucket(
   bucket: 'raw_clips' | 'segments' | 'final_videos',
