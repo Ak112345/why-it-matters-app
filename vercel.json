@@ -7,14 +7,6 @@
     {
       "path": "/api/content/generate",
       "schedule": "0 9 * * *"
-    },
-    {
-      "path": "/api/publish/cron",
-      "schedule": "*/15 * * * *"
-    },
-    {
-      "path": "/api/errors/detect",
-      "schedule": "*/5 * * * *"
     }
   ]
 }
