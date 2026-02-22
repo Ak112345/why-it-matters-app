@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * Cron endpoint for automated publishing
  * Triggered every 15 minutes by Vercel Cron
@@ -11,11 +12,11 @@ export async function GET(request: NextRequest) {
   try {
     // Verify the request is from Vercel Cron (security check)
     const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    if (authHeader !== `Bearer ${process.env.VERCEL_CRON_SECRET}`) {
       console.warn('Unauthorized cron request attempt');
       // In production, you should return 401
       // For now, we'll allow it to work during development
-      if (process.env.NODE_ENV === 'production' && process.env.CRON_SECRET) {
+      if (process.env.NODE_ENV === 'production' && process.env.VERCEL_CRON_SECRET) {
         return NextResponse.json(
           { success: false, error: 'Unauthorized' },
           { status: 401 }
