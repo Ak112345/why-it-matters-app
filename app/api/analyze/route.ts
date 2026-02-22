@@ -32,12 +32,14 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Error in analyze API:', error);
+    // Return partial success or fallback
     return NextResponse.json(
       {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
+        fallback: true,
       },
-      { status: 500 }
+      { status: 200 }
     );
   }
 }

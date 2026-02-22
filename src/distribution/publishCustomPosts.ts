@@ -1,9 +1,18 @@
+interface QueueItem {
+  id: string;
+  created_at: string;
+  final_video_id: string | null;
+  platform: string | null;
+  posted_at: string | null;
+  scheduled_for: string | null;
+  status: string | null;
+  type: string;
+}
 import { supabase } from '../utils/supabaseClient';
-import { ENV } from '../utils/env';
 
 export async function publishCarouselPost(queueId: string) {
   // Fetch queue item
-  const { data: queueItem, error } = await supabase.from('posting_queue').select('*').eq('id', queueId).single();
+  const { data: queueItem, error } = await supabase.from('posting_queue').select('*').eq('id', queueId).single<QueueItem>();
   if (error || !queueItem) throw new Error('Queue item not found');
   if (queueItem.type !== 'carousel') throw new Error('Not a carousel post');
 
@@ -15,7 +24,7 @@ export async function publishCarouselPost(queueId: string) {
 
 export async function publishArticlePost(queueId: string) {
   // Fetch queue item
-  const { data: queueItem, error } = await supabase.from('posting_queue').select('*').eq('id', queueId).single();
+  const { data: queueItem, error } = await supabase.from('posting_queue').select('*').eq('id', queueId).single<QueueItem>();
   if (error || !queueItem) throw new Error('Queue item not found');
   if (queueItem.type !== 'article') throw new Error('Not an article post');
 

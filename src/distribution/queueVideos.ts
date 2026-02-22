@@ -49,8 +49,9 @@ function calculateNextPostingTime(
  */
 async function queueSingleVideo(
   videoId: string,
-  platforms: Array<'instagram' | 'youtube_shorts'>,
-  scheduledTime?: Date
+  platforms: Array<'instagram' | 'youtube_shorts' | 'tiktok'>,
+  scheduledTime?: Date,
+  minHoursBetweenPosts: number = 6
 ): Promise<QueueResult> {
   try {
     // Fetch video to ensure it exists
@@ -98,7 +99,7 @@ async function queueSingleVideo(
         : undefined;
 
       // Calculate scheduled time, allow custom interval
-      const postTime = scheduledTime || calculateNextPostingTime(lastTime, options.minHoursBetweenPosts || 6);
+      const postTime = scheduledTime || calculateNextPostingTime(lastTime, minHoursBetweenPosts);
 
       // Insert into posting queue
       const { data: queuedItem, error: insertError } = await supabase
@@ -142,6 +143,7 @@ export async function queueVideos(options: QueueVideoOptions = {}): Promise<Queu
     platform = 'all',
     scheduledTime,
     batchSize = 10,
+    minHoursBetweenPosts = 6,
   } = options;
 
   const results: QueueResult[] = [];
@@ -155,7 +157,7 @@ export async function queueVideos(options: QueueVideoOptions = {}): Promise<Queu
   try {
     // If specific video ID provided, queue only that video
     if (videoId) {
-      const result = await queueSingleVideo(videoId, platforms, scheduledTime);
+      const result = await queueSingleVideo(videoId, platforms, scheduledTime, minHoursBetweenPosts);
       results.push(result);
       return results;
     }
@@ -175,12 +177,11 @@ export async function queueVideos(options: QueueVideoOptions = {}): Promise<Queu
       console.log('No videos found to queue');
       return results;
     }
-
     console.log(`Found ${videos.length} videos to check for queueing`);
 
     for (const video of videos) {
       try {
-        const result = await queueSingleVideo(video.id, platforms, scheduledTime);
+        const result = await queueSingleVideo(video.id, platforms, scheduledTime, minHoursBetweenPosts);
         results.push(result);
       } catch (error) {
         console.error(`Failed to queue video ${video.id}:`, error);
@@ -218,6 +219,7 @@ export async function getUpcomingPosts(limit: number = 20): Promise<any[]> {
 
   return data || [];
 }
+
 
 /**
  * Cancel a queued post
