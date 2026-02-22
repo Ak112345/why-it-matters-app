@@ -16,5 +16,10 @@ jobs:
     steps:
       - name: Trigger content generation
         run: |
-          curl -X GET "https://why-it-matters-app.vercel.app /api/content/generate" \
-            -H "Authorization: Bearer XI92wVtr0G9MHmvb5IQY7UAdXGKcx3nEVuQMDrO4iOQ="
+          set -e
+          curl -fsS "${{ secrets.VERCEL_PRODUCTION_URL }}/api/content/generate?secret=${{ secrets.VERCEL_CRON_SECRET }}"
+      - name: Trigger YouTube content test run
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          set -e
+          curl -fsS "${{ secrets.VERCEL_PRODUCTION_URL }}/api/content/generate?platform=youtube&test=true&secret=${{ secrets.VERCEL_CRON_SECRET }}"

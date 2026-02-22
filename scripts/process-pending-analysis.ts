@@ -1,8 +1,8 @@
 // This worker processes pending analysis rows and triggers content production and posting.
 // Schedule this script to run every few minutes (via GitHub Actions, Vercel Cron, or another scheduler).
 
-import dotenv from 'dotenv';
-dotenv.config({ path: '.env.local' });
+// ...existing code...
+// ...existing code...
 
 import { createClient } from '@supabase/supabase-js';
 

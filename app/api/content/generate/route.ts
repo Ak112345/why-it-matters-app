@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
   try {
     // Verify the request is from Vercel Cron or authorized user (security check)
     const authHeader = request.headers.get('authorization');
-    const cronSecret = process.env.CRON_SECRET;
+    const cronSecret = process.env.VERCEL_CRON_SECRET;
     
     if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
       console.warn('Unauthorized content generation request attempt');
