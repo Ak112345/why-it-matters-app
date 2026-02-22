@@ -1,4 +1,3 @@
-import fetch from 'node-fetch';
 
 export async function metaApiRequest(endpoint: string, accessToken: string, params: Record<string, string | number> = {}) {
   const url = new URL(`https://graph.facebook.com/v19.0/${endpoint}`);
@@ -8,6 +7,7 @@ export async function metaApiRequest(endpoint: string, accessToken: string, para
   if (!res.ok) throw new Error(`Meta API error: ${res.status}`);
   return res.json();
 }
+
 
 // Simple in-memory cache (for Vercel serverless)
 const cache: Record<string, { data: any; expires: number }> = {};
@@ -21,3 +21,4 @@ export async function cachedMetaApiRequest(endpoint: string, accessToken: string
   cache[cacheKey] = { data, expires: now + cacheMinutes * 60 * 1000 };
   return data;
 }
+

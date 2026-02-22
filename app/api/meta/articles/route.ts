@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
 // Placeholder: Newspaper articles endpoint
 // In a real system, you would fetch articles from a CMS or external API

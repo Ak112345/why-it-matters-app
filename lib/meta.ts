@@ -1,3 +1,4 @@
+export * from './meta/index';
 // lib/meta.ts
 export const META_GRAPH = "https://graph.facebook.com/v19.0";
 

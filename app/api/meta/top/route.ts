@@ -1,28 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cachedMetaApiRequest } from '@/lib/meta';
+import { metaGet } from '@/lib/meta';
 
 export async function GET(req: NextRequest) {
   const accessToken = req.headers.get('authorization')?.replace('Bearer ', '') || '';
   const fbPageId = req.nextUrl.searchParams.get('fbPageId');
   const igId = req.nextUrl.searchParams.get('igId');
-  const days = Number(req.nextUrl.searchParams.get('days') || 7);
   const limit = Number(req.nextUrl.searchParams.get('limit') || 10);
   let fbPosts = [];
   let igMedia = [];
   if (fbPageId) {
-    const fbPostsRes = await cachedMetaApiRequest(`${fbPageId}/posts`, accessToken, { fields: 'id', limit }, 10);
+    const fbPostsRes = await metaGet(`${fbPageId}/posts`, accessToken, { fields: 'id', limit }, 10);
     fbPosts = fbPostsRes.data || [];
     // Fetch insights for each post (simplified)
     fbPosts = await Promise.all(fbPosts.map(async (post: any) => {
-      const insights = await cachedMetaApiRequest(`${post.id}/insights`, accessToken, {}, 10);
+      const insights = await metaGet(`${post.id}/insights`, accessToken, {}, 10);
       return { ...post, insights };
     }));
   }
   if (igId) {
-    const igMediaRes = await cachedMetaApiRequest(`${igId}/media`, accessToken, { fields: 'id', limit }, 10);
+    const igMediaRes = await metaGet(`${igId}/media`, accessToken, { fields: 'id', limit }, 10);
     igMedia = igMediaRes.data || [];
     igMedia = await Promise.all(igMedia.map(async (media: any) => {
-      const insights = await cachedMetaApiRequest(`${media.id}/insights`, accessToken, {}, 10);
+      const insights = await metaGet(`${media.id}/insights`, accessToken, {}, 10);
       return { ...media, insights };
     }));
   }
