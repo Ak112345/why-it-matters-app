@@ -9,19 +9,31 @@ export async function GET(req: NextRequest) {
   let fbPosts = [];
   let igMedia = [];
   if (fbPageId) {
-    const fbPostsRes = await metaGet(`${fbPageId}/posts`, accessToken, { fields: 'id', limit }, 10);
+    const fbPostsRes = await metaGet<{ data: any[] }>(
+      `${fbPageId}/posts?fields=id&limit=${limit}`,
+      accessToken
+    );
     fbPosts = fbPostsRes.data || [];
     // Fetch insights for each post (simplified)
     fbPosts = await Promise.all(fbPosts.map(async (post: any) => {
-      const insights = await metaGet(`${post.id}/insights`, accessToken, {}, 10);
+      const insights = await metaGet<any>(
+        `${post.id}/insights`,
+        accessToken
+      );
       return { ...post, insights };
     }));
   }
   if (igId) {
-    const igMediaRes = await metaGet(`${igId}/media`, accessToken, { fields: 'id', limit }, 10);
+    const igMediaRes = await metaGet<{ data: any[] }>(
+      `${igId}/media?fields=id&limit=${limit}`,
+      accessToken
+    );
     igMedia = igMediaRes.data || [];
     igMedia = await Promise.all(igMedia.map(async (media: any) => {
-      const insights = await metaGet(`${media.id}/insights`, accessToken, {}, 10);
+      const insights = await metaGet<any>(
+        `${media.id}/insights`,
+        accessToken
+      );
       return { ...media, insights };
     }));
   }

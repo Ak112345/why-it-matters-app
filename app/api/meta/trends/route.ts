@@ -9,10 +9,16 @@ export async function GET(req: NextRequest) {
   let fbTrends = null;
   let igTrends = null;
   if (fbPageId) {
-    fbTrends = await metaGet(`${fbPageId}/insights`, accessToken, { period: 'day', metric: 'page_views,page_engaged_users', since: Date.now() - days * 86400000 }, 10);
+    fbTrends = await metaGet<any>(
+      `${fbPageId}/insights?period=day&metric=page_views,page_engaged_users&since=${Date.now() - days * 86400000}`,
+      accessToken
+    );
   }
   if (igId) {
-    igTrends = await metaGet(`${igId}/insights`, accessToken, { period: 'day', metric: 'reach,profile_views', since: Date.now() - days * 86400000 }, 10);
+    igTrends = await metaGet<any>(
+      `${igId}/insights?period=day&metric=reach,profile_views&since=${Date.now() - days * 86400000}`,
+      accessToken
+    );
   }
   return NextResponse.json({ facebook: fbTrends, instagram: igTrends });
 }

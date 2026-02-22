@@ -7,7 +7,13 @@ export async function GET(req: NextRequest) {
   const igId = req.nextUrl.searchParams.get('igId');
   const fbFields = 'id,message,created_time,permalink_url';
   const igFields = 'id,caption,media_type,media_product_type,permalink,timestamp,like_count,comments_count,media_url,thumbnail_url';
-  const fbPosts = fbPageId ? await metaGet(`${fbPageId}/posts`, accessToken, { fields: fbFields }, 10) : null;
-  const igMedia = igId ? await metaGet(`${igId}/media`, accessToken, { fields: igFields }, 10) : null;
+  const fbPosts = fbPageId ? await metaGet<{ data: any[] }>(
+    `${fbPageId}/posts?fields=${fbFields}`,
+    accessToken
+  ) : null;
+  const igMedia = igId ? await metaGet<{ data: any[] }>(
+    `${igId}/media?fields=${igFields}`,
+    accessToken
+  ) : null;
   return NextResponse.json({ facebook: fbPosts, instagram: igMedia });
 }

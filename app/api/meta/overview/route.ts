@@ -7,7 +7,13 @@ export async function GET(req: NextRequest) {
   const igId = req.nextUrl.searchParams.get('igId');
   const fbFields = 'name,fan_count,followers_count';
   const igFields = 'username,followers_count,media_count';
-  const fbOverview = fbPageId ? await metaGet(`${fbPageId}`, accessToken, { fields: fbFields }, 10) : null;
-  const igOverview = igId ? await metaGet(`${igId}`, accessToken, { fields: igFields }, 10) : null;
+  const fbOverview = fbPageId ? await metaGet<{ name?: string; fan_count?: number; followers_count?: number }>(
+    `${fbPageId}?fields=${fbFields}`,
+    accessToken
+  ) : null;
+  const igOverview = igId ? await metaGet<{ username?: string; followers_count?: number; media_count?: number }>(
+    `${igId}?fields=${igFields}`,
+    accessToken
+  ) : null;
   return NextResponse.json({ facebook: fbOverview, instagram: igOverview });
 }
