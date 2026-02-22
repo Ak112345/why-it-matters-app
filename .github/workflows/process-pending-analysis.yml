@@ -24,5 +24,5 @@ jobs:
       - name: Run worker script
         env:
           SUPABASE_URL: https://aiwijowbfdfcfivrmrao.supabase.co
-          SUPABASE_SERVICE_ROLE_KEY:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFpd2lqb3diZmRmY2ZpdnJtcmFvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTE3OTk3NiwiZXhwIjoyMDg2NzU1OTc2fQ.K4SVaD7KTTMYA7pZIPqNhacbDRpa0V-w9hLg4Zl4C_A
-        run: npx ts-node scripts/process-pending-analysis.ts
+          SUPABASE_SERVICE_ROLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFpd2lqb3diZmRmY2ZpdnJtcmFvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTE3OTk3NiwiZXhwIjoyMDg2NzU1OTc2fQ.K4SVaD7KTTMYA7pZIPqNhacbDRpa0V-w9hLg4Zl4C_A
+        run: npx ts-node scripts/process-pending-analysis
