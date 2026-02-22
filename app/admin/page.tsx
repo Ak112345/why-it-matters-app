@@ -1,3 +1,5 @@
+"use client";
+"use client";
 import React, { useEffect, useState } from 'react';
 
 function fetchWithAuth(url: string) {
@@ -8,7 +10,18 @@ function fetchWithAuth(url: string) {
   }).then(res => res.json());
 }
 
-export default function AdminDashboard() {
+export default function DefaultExport() {
+  // Facebook token expiry: April 23, 2026
+  const fbTokenExpiry = new Date('2026-04-23');
+  const now = new Date();
+  const daysToExpiry = Math.ceil((fbTokenExpiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  // Optionally send expiry reminder email
+  // import { sendTokenExpiryReminder } from '@/lib/sendTokenExpiryReminder';
+  // useEffect(() => {
+  //   if (daysToExpiry <= 7) {
+  //     sendTokenExpiryReminder('akwaidah00@gmail.com', daysToExpiry).catch(() => {});
+  //   }
+  // }, [daysToExpiry]);
     const [metaCarousels, setMetaCarousels] = useState<any>(null);
     const [metaArticles, setMetaArticles] = useState<any>(null);
   const [overview, setOverview] = useState<any>(null);
@@ -37,16 +50,22 @@ export default function AdminDashboard() {
   }, []);
 
   return (
-          <section>
-            <h2>Meta Carousels</h2>
-            <pre>{JSON.stringify(metaCarousels, null, 2)}</pre>
-          </section>
-          <section>
-            <h2>Newspaper Articles</h2>
-            <pre>{JSON.stringify(metaArticles, null, 2)}</pre>
-          </section>
     <div>
+      {daysToExpiry <= 7 && (
+        <div style={{ background: '#fffbe6', color: '#ad6800', padding: '12px', borderRadius: '6px', marginBottom: '16px', border: '1px solid #ffe58f' }}>
+          <strong>Reminder:</strong> Your Facebook Page access token expires in {daysToExpiry} day{daysToExpiry !== 1 ? 's' : ''} (April 23, 2026).<br />
+          Please refresh it soon to avoid dashboard/API disruptions.
+        </div>
+      )}
       <h1>Admin Dashboard</h1>
+      <section>
+        <h2>Meta Carousels</h2>
+        <pre>{JSON.stringify(metaCarousels, null, 2)}</pre>
+      </section>
+      <section>
+        <h2>Newspaper Articles</h2>
+        <pre>{JSON.stringify(metaArticles, null, 2)}</pre>
+      </section>
       <section>
         <h2>YouTube Channel Overview</h2>
         <pre>{JSON.stringify(overview, null, 2)}</pre>
