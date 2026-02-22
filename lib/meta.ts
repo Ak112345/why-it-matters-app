@@ -1,10 +1,20 @@
-import fetch from 'node-fetch';
+// lib/meta.ts
+export const META_GRAPH = "https://graph.facebook.com/v19.0";
 
-export async function fetchMeta(endpoint: string, accessToken: string, params: Record<string, string | number> = {}) {
-  const url = new URL(`https://graph.facebook.com/v19.0/${endpoint}`);
-  Object.entries(params).forEach(([key, value]) => url.searchParams.append(key, String(value)));
-  url.searchParams.append('access_token', accessToken);
-  const res = await fetch(url.toString());
-  if (!res.ok) throw new Error(`Meta API error: ${res.status}`);
-  return res.json();
+export function getMetaEnv() {
+  const pageId = process.env.FACEBOOK_PAGE_ID!;
+  const token = process.env.FACEBOOK_PAGE_ACCESS_TOKEN!;
+  const igId = process.env.INSTAGRAM_BUSINESS_ID!;
+  if (!pageId || !token || !igId) throw new Error("Missing Meta env vars");
+  return { pageId, token, igId };
+}
+
+export async function metaGet<T>(path: string, token: string) {
+  const url = new URL(`${META_GRAPH}/${path}`);
+  url.searchParams.set("access_token", token);
+
+  const res = await fetch(url.toString(), { cache: "no-store" });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json?.error?.message || "Meta API error");
+  return json as T;
 }

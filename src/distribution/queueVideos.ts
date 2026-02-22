@@ -6,7 +6,8 @@ import { supabase } from '../utils/supabaseClient';
 
 export interface QueueVideoOptions {
   videoId?: string; // If provided, queue only this video
-  platform?: 'instagram' | 'youtube_shorts' | 'all';
+  platform?: 'instagram' | 'youtube_shorts' | 'tiktok' | 'all';
+  minHoursBetweenPosts?: number; // Custom interval for TikTok or others
   scheduledTime?: Date; // If not provided, schedule for next available slot
   batchSize?: number; // Number of videos to queue at once
 }
@@ -96,8 +97,8 @@ async function queueSingleVideo(
         ? new Date(lastQueue.scheduled_for) 
         : undefined;
 
-      // Calculate scheduled time
-      const postTime = scheduledTime || calculateNextPostingTime(lastTime);
+      // Calculate scheduled time, allow custom interval
+      const postTime = scheduledTime || calculateNextPostingTime(lastTime, options.minHoursBetweenPosts || 6);
 
       // Insert into posting queue
       const { data: queuedItem, error: insertError } = await supabase
@@ -146,9 +147,9 @@ export async function queueVideos(options: QueueVideoOptions = {}): Promise<Queu
   const results: QueueResult[] = [];
 
   // Determine which platforms to post to
-  const platforms: Array<'instagram' | 'youtube_shorts'> =
+  const platforms: Array<'instagram' | 'youtube_shorts' | 'tiktok'> =
     platform === 'all'
-      ? ['instagram', 'youtube_shorts']
+      ? ['instagram', 'youtube_shorts', 'tiktok']
       : [platform];
 
   try {

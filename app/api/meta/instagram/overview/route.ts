@@ -1,11 +1,20 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { fetchMeta } from '@/lib/meta';
+import { NextResponse } from "next/server";
+import { getMetaEnv, metaGet } from "@/lib/meta";
 
-export async function GET(req: NextRequest) {
-  const accessToken = req.headers.get('authorization')?.replace('Bearer ', '') || '';
-  const igId = req.nextUrl.searchParams.get('igId');
-  if (!igId) return NextResponse.json({ error: 'Missing igId' }, { status: 400 });
-  const fields = 'username,followers_count,media_count';
-  const overview = await fetchMeta(`${igId}`, accessToken, { fields });
-  return NextResponse.json(overview);
+export async function GET() {
+  try {
+    const { igId, token } = getMetaEnv();
+
+    const data = await metaGet<{
+      id: string;
+      username?: string;
+      followers_count?: number;
+      media_count?: number;
+      name?: string;
+    }>(`${igId}?fields=id,username,name,followers_count,media_count`, token);
+
+    return NextResponse.json(data);
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message ?? "Unknown error" }, { status: 500 });
+  }
 }

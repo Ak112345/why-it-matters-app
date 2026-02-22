@@ -1,7 +1,7 @@
-// supabase/functions/auto-post/index.ts
-// Updated: TikTok removed from API posting — handled via batch storage bucket instead
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// Define PostRecord interface above imports to avoid hoisting issues
+const API_PLATFORMS = ["instagram", "youtube", "facebook"];
+
 interface PostRecord {
   id: string;
   clip_url: string;
@@ -12,33 +12,29 @@ interface PostRecord {
   platforms: string[];
   status: "queued" | "posting" | "posted" | "failed";
   scheduled_at: string;
-  tiktok_caption?: string;   // Optional TikTok-specific caption override
-  tiktok_hashtags?: string;  // Optional TikTok-specific hashtags override
+  tiktok_caption?: string;
+  tiktok_hashtags?: string;
 }
 
-import type { NextApiRequest, NextApiResponse } from "next";
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
-
-
-const API_PLATFORMS = ["instagram", "youtube", "facebook"]; // Auto-posted via API
-
-export default async function handler(req: NextApiRequest, res: NextApiResponse): Promise<void> {
+Deno.serve(async (req) => {
   try {
-    const authHeader = req.headers['authorization'];
-    const cronSecret = process.env.CRON_SECRET || 'test123';
+    const authHeader = req.headers.get("Authorization");
+    const cronSecret = Deno.env.get("CRON_SECRET");
     if (!authHeader || authHeader !== `Bearer ${cronSecret}`) {
-      return res.status(401).json({ error: "Unauthorized" });
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     const supabase = createClient(
-      process.env.SUPABASE_URL || "",
-      process.env.SUPABASE_SERVICE_ROLE_KEY || ""
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    const body = req.method === "POST" ? req.body || {} : {};
+    const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
     const source = body.source ?? "cron";
 
-    // Fetch next queued post due now
     const { data: posts, error: fetchError } = await supabase
       .from("posts")
       .select("*")
@@ -50,12 +46,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (fetchError) throw fetchError;
 
     if (!posts || posts.length === 0) {
-      return res.status(200).json({ message: "No posts queued for now", posted: 0 });
+      return new Response(
+        JSON.stringify({ message: "No posts queued", posted: 0 }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
     }
 
     const post: PostRecord = posts[0];
 
-    // Lock post immediately to prevent double-posting
     await supabase
       .from("posts")
       .update({ status: "posting", updated_at: new Date().toISOString() })
@@ -63,7 +61,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const results: Record<string, { success: boolean; error?: string; detail?: unknown }> = {};
 
-    // ── 1. API platforms: Instagram, YouTube, Facebook ────────────────────────
     const apiTargets = post.platforms.filter((p) => API_PLATFORMS.includes(p));
     for (const platform of apiTargets) {
       try {
@@ -74,7 +71,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
-    // ── 2. TikTok: write to tiktok-batch storage bucket ──────────────────────
     if (post.platforms.includes("tiktok")) {
       try {
         await queueTikTokBatch(supabase, post);
@@ -84,7 +80,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
-    // ── 3. Final status ───────────────────────────────────────────────────────
     const allFailed = Object.values(results).every((r) => !r.success);
     const finalStatus = allFailed ? "failed" : "posted";
 
@@ -106,59 +101,44 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       source,
     });
 
-    return res.status(200).json({ message: `Post ${finalStatus}`, post_id: post.id, results });
+    return new Response(
+      JSON.stringify({ message: `Post ${finalStatus}`, post_id: post.id, results }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
   } catch (error) {
     console.error("Auto-post error:", error);
-    return res.status(500).json({ error: String(error) });
+    return new Response(JSON.stringify({ error: String(error) }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
-}
+});
 
-// ─── TikTok Batch Queue ───────────────────────────────────────────────────────
-
-async function queueTikTokBatch(supabase: SupabaseClient, post: PostRecord) {
-  const today = new Date().toISOString().split("T")[0]; // e.g. "2025-02-22"
-
+async function queueTikTokBatch(supabase: ReturnType<typeof createClient>, post: PostRecord) {
+  const today = new Date().toISOString().split("T")[0];
   const caption = post.tiktok_caption ?? post.caption;
   const hashtags = post.tiktok_hashtags ?? post.hashtags;
-
   const suggestedTimes = [
-    "7:00 AM EST  (12:00 UTC) — Morning commute scroll",
-    "12:00 PM EST (17:00 UTC) — Lunch break scroll",
-    "7:00 PM EST  (00:00 UTC) — Prime evening time",
+    "7:00 AM EST  (12:00 UTC) - Morning commute scroll",
+    "12:00 PM EST (17:00 UTC) - Lunch break scroll",
+    "7:00 PM EST  (00:00 UTC) - Prime evening time",
   ];
-
-  // Build companion .txt file
   const txtContent = [
     `POST ID: ${post.id}`,
     `DATE: ${today}`,
-    ``,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `CAPTION (copy/paste into TikTok):`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    caption,
-    ``,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `HASHTAGS:`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    hashtags,
-    ``,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `SUGGESTED POSTING TIMES:`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `CAPTION: ${caption}`,
+    `HASHTAGS: ${hashtags}`,
+    `SUGGESTED TIMES:`,
     ...suggestedTimes,
-    ``,
-    `VIDEO FILE: ${post.id}.mp4`,
-    `SOURCE URL: ${post.clip_url}`,
+    `VIDEO URL: ${post.clip_url}`,
   ].join("\n");
 
-  // Upload companion .txt to tiktok-batch bucket
   const txtPath = `${today}/${post.id}.txt`;
   const { error: txtError } = await supabase.storage
     .from("tiktok-batch")
     .upload(txtPath, new Blob([txtContent], { type: "text/plain" }), { upsert: true });
   if (txtError) throw new Error(`TXT upload failed: ${txtError.message}`);
 
-  // Register in tiktok_batch table
   const { error: dbError } = await supabase.from("tiktok_batch").insert({
     post_id: post.id,
     batch_date: today,
@@ -174,8 +154,6 @@ async function queueTikTokBatch(supabase: SupabaseClient, post: PostRecord) {
   if (dbError) throw new Error(`DB insert failed: ${dbError.message}`);
 }
 
-// ─── API Platform Functions ───────────────────────────────────────────────────
-
 async function postToPlatform(platform: string, post: PostRecord) {
   switch (platform) {
     case "instagram": return await postToInstagram(post);
@@ -186,8 +164,8 @@ async function postToPlatform(platform: string, post: PostRecord) {
 }
 
 async function postToInstagram(post: PostRecord) {
-  const token = process.env.INSTAGRAM_ACCESS_TOKEN;
-  const igUserId = process.env.INSTAGRAM_USER_ID;
+  const token = Deno.env.get("INSTAGRAM_ACCESS_TOKEN");
+  const igUserId = Deno.env.get("INSTAGRAM_USER_ID");
   const containerRes = await fetch(
     `https://graph.instagram.com/v19.0/${igUserId}/media`,
     {
@@ -216,7 +194,7 @@ async function postToInstagram(post: PostRecord) {
 }
 
 async function postToYouTube(post: PostRecord) {
-  const token = process.env.YOUTUBE_ACCESS_TOKEN;
+  const token = Deno.env.get("YOUTUBE_ACCESS_TOKEN");
   const response = await fetch(
     "https://www.googleapis.com/upload/youtube/v3/videos?part=snippet,status&uploadType=resumable",
     {
@@ -238,8 +216,8 @@ async function postToYouTube(post: PostRecord) {
 }
 
 async function postToFacebook(post: PostRecord) {
-  const token = process.env.FACEBOOK_PAGE_TOKEN;
-  const pageId = process.env.FACEBOOK_PAGE_ID;
+  const token = Deno.env.get("FACEBOOK_PAGE_TOKEN");
+  const pageId = Deno.env.get("FACEBOOK_PAGE_ID");
   const response = await fetch(
     `https://graph.facebook.com/v19.0/${pageId}/videos`,
     {
