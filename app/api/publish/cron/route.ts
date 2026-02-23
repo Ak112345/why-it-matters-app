@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
  * GET /api/publish/cron
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { publishVideo, type PublishResult } from '../../../../src/distribution/publishVideo';
 
 export async function GET() {
