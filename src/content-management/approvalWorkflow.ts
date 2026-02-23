@@ -145,6 +145,10 @@ export async function submitApproval(
   try {
     const stage = approved ? ReviewStage.APPROVED : ReviewStage.REVISION_REQUESTED;
 
+    const taskIdNum = Number(taskId);
+    if (!Number.isFinite(taskIdNum)) {
+      throw new Error(`Invalid taskId (expected number): ${taskId}`);
+    }
     const { error } = await supabase
       .from('review_tasks')
       .update({
@@ -154,7 +158,7 @@ export async function submitApproval(
         decided_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       } as any)
-      .eq('id', Number(taskId));
+      .eq('id', taskIdNum);
 
     if (error) {
       console.error('Error submitting approval:', error);
@@ -260,13 +264,17 @@ export async function requestRevisions(
  */
 export async function archiveReviewTask(taskId: string): Promise<boolean> {
   try {
+    const taskIdNum = Number(taskId);
+    if (!Number.isFinite(taskIdNum)) {
+      throw new Error(`Invalid taskId (expected number): ${taskId}`);
+    }
     const { error } = await supabase
       .from('review_tasks')
       .update({
         stage: ReviewStage.ARCHIVED,
         updated_at: new Date().toISOString(),
       } as any)
-      .eq('id', Number(taskId));
+      .eq('id', taskIdNum);
 
     if (error) {
       console.error('Error archiving task:', error);
