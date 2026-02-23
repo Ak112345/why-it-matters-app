@@ -5,10 +5,10 @@
  * GET /api/content/performance - Get performance analytics
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { directorApproveContent, getDirectorBrief, getWeeklyStrategy } from '@/src/content-management/contentDirector';
 
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
     const body = await request.json();
     const { action, clipId, analysisData } = body;
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const searchParams = request.nextUrl.searchParams;
     const action = searchParams.get('action');

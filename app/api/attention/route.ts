@@ -15,6 +15,7 @@ export interface AttentionItem {
 export async function GET() {
   try {
     const items: AttentionItem[] = [];
+    const debug: any = {};
 
     // 1. Check for failed publishes
     const { data: failedPublishes, error: failedError } = await supabase
@@ -35,9 +36,11 @@ export async function GET() {
       .eq('status', 'failed')
       .order('updated_at', { ascending: false })
       .limit(5);
+    debug.failedPublishes = { failedPublishes, failedError };
 
     if (failedError) {
       console.error('Error fetching failed publishes:', failedError);
+      debug.failedError = failedError;
     } else if (failedPublishes) {
       for (const publish of failedPublishes) {
         const publishData = publish as any;
@@ -67,9 +70,11 @@ export async function GET() {
       .eq('status', 'active')
       .order('created_at', { ascending: false })
       .limit(10);
+    debug.pixabayClips = { pixabayClips, pixabayError };
 
     if (pixabayError) {
       console.error('Error fetching Pixabay clips:', pixabayError);
+      debug.pixabayError = pixabayError;
     } else if (pixabayClips && pixabayClips.length > 0) {
       const firstClip = pixabayClips[0] as any;
       // Add one summary item for all Pixabay clips needing attribution
@@ -104,9 +109,11 @@ export async function GET() {
       .lt('updated_at', thirtyMinutesAgo)
       .order('updated_at', { ascending: true })
       .limit(5);
+    debug.stuckVideos = { stuckVideos, stuckError };
 
     if (stuckError) {
       console.error('Error fetching stuck videos:', stuckError);
+      debug.stuckError = stuckError;
     } else if (stuckVideos) {
       for (const video of stuckVideos) {
         const videoData = video as any;
@@ -134,12 +141,13 @@ export async function GET() {
         failed: items.filter(i => i.type === 'failed_publish').length,
         stuck: items.filter(i => i.type === 'stuck_upload').length,
         attribution: items.filter(i => i.type === 'attribution_needed').length,
-      }
+      },
+      debug,
     });
   } catch (error) {
     console.error('Error fetching attention items:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch attention items' },
+      { success: false, error: error instanceof Error ? error.message : 'Failed to fetch attention items', stack: error instanceof Error ? error.stack : undefined },
       { status: 500 }
     );
   }

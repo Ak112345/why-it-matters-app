@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { metaGet } from '@/lib/meta';
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   const accessToken = req.headers.get('authorization')?.replace('Bearer ', '') || '';
   const igId = req.nextUrl.searchParams.get('igId');
   // Instagram: fetch carousels (media_type=CAROUSEL_ALBUM)

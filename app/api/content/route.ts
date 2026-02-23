@@ -3,12 +3,12 @@
  * GET /api/content - Get overview and statistics
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getDirectorBrief } from '@/src/content-management/contentDirector';
 import { getApprovalStats } from '@/src/content-management/approvalWorkflow';
 import { getAggregatedAnalytics } from '@/src/content-management/performanceTracking';
 
-export async function GET(_request: NextRequest) {
+export async function GET() {
   try {
     // Fetch all dashboard data in parallel
     const [directorBrief, approvalStats, analytics] = await Promise.all([

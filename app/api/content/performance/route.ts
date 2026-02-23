@@ -4,14 +4,14 @@
  * GET /api/content/performance - Get analytics for period
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import {
   recordPerformanceMetrics,
   getAggregatedAnalytics,
   getPillarPerformance,
 } from '@/src/content-management/performanceTracking';
 
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
     const body = await request.json();
     const { videoId, platform, metrics } = body;
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const searchParams = request.nextUrl.searchParams;
     const action = searchParams.get('action');
