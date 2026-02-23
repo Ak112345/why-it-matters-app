@@ -3,7 +3,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { ENV } from './env';
+import { ENV } from './env.ts';
 import type { Database } from '../types/database.ts';
 
 /**

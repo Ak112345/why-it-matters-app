@@ -1,3 +1,115 @@
+// CLI handler: print approved, pending posts for all platforms if run directly
+if (import.meta.url === `file://${process.cwd()}/src/distribution/queueVideos.ts`) {
+  (async () => {
+    console.log('Fetching approved, pending posts for all platforms...');
+    try {
+      const posts = await getUpcomingPosts(20);
+      const platforms = ['tiktok', 'instagram', 'youtube_shorts'];
+      for (const platform of platforms) {
+        const filtered = posts.filter(p => p.platform === platform && p.status === 'pending' && p.videos_final && p.videos_final.status === 'approved');
+        console.log(`\nPlatform: ${platform}`);
+        if (filtered.length === 0) {
+          console.log('No approved, pending posts.');
+        } else {
+          filtered.forEach(post => {
+            console.log({
+              id: post.id,
+              scheduled_for: post.scheduled_for,
+              video_id: post.final_video_id,
+              caption: post.videos_final.caption,
+              file_path: post.videos_final.file_path,
+              hashtags: post.videos_final.analysis?.hashtags,
+              quality_score: post.videos_final.analysis?.quality_score,
+              virality_score: post.videos_final.analysis?.virality_score,
+              approval_status: post.videos_final.analysis?.approval_status
+            });
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching posts:', err);
+    }
+  })();
+}
+/**
+ * Ensure queue always has approved videos ready to post
+ * Replace rejected posts with next approved clip
+ */
+export async function maintainQueueBuffer(bufferSize: number = 3, platforms: Array<'instagram' | 'youtube_shorts' | 'tiktok'> = ['instagram', 'youtube_shorts', 'tiktok']) {
+  // Get pending posts
+  const { data: pendingPosts, error: pendingError } = await supabase
+    .from('posting_queue')
+    .select('id, final_video_id, platform, status, scheduled_for')
+    .eq('status', 'pending');
+  if (pendingError) throw pendingError;
+
+  // Get approved videos not already queued
+  const { data: approvedVideos, error: approvedError } = await supabase
+    .from('videos_final')
+    .select('id')
+    .eq('status', 'approved');
+  if (approvedError) throw approvedError;
+
+  // Find queued video IDs
+  const queuedIds = pendingPosts ? pendingPosts.map(p => p.final_video_id) : [];
+  // Filter approved videos not already queued
+  const unqueuedApproved = approvedVideos ? approvedVideos.filter(v => !queuedIds.includes(v.id)) : [];
+
+  // Replace rejected posts
+  for (const post of pendingPosts || []) {
+    // Fetch video status
+    let video = null;
+    if (post.final_video_id) {
+      const { data } = await supabase.from('videos_final').select('status').eq('id', post.final_video_id).single();
+      video = data;
+    }
+    if (video && video.status === 'rejected') {
+      // Remove rejected post
+      await supabase.from('posting_queue').delete().eq('id', post.id);
+      // Queue next approved video for same platform and time
+      const nextClip = unqueuedApproved.shift();
+      if (nextClip) {
+        const validPlatforms = ["instagram", "youtube_shorts", "tiktok"] as const;
+        if (
+          post.platform &&
+          validPlatforms.includes(post.platform as typeof validPlatforms[number]) &&
+          post.scheduled_for
+        ) {
+          await queueSingleVideo(
+            nextClip.id,
+            [post.platform as "instagram" | "youtube_shorts" | "tiktok"],
+            new Date(post.scheduled_for)
+          );
+        }
+      }
+    }
+  }
+
+  // Ensure buffer of approved videos
+  let bufferCount = pendingPosts ? pendingPosts.filter(p => {
+    const vid = approvedVideos.find(v => v.id === p.final_video_id);
+    return vid && p.status === 'pending';
+  }).length : 0;
+  while (bufferCount < bufferSize && unqueuedApproved.length > 0) {
+    const nextClip = unqueuedApproved.shift();
+    if (nextClip) {
+      await queueSingleVideo(nextClip.id, platforms);
+    }
+    bufferCount++;
+  }
+}
+// CLI handler: print upcoming posts if run directly
+if (import.meta.url === `file://${process.cwd()}/src/distribution/queueVideos.ts`) {
+  (async () => {
+    console.log('Fetching upcoming posts...');
+    try {
+      const posts = await getUpcomingPosts(10);
+      console.log('Upcoming posts:', JSON.stringify(posts, null, 2));
+    } catch (err) {
+      console.error('Error fetching upcoming posts:', err);
+    }
+  })();
+}
 /**
  * Queue final videos for scheduled posting
  */
@@ -98,8 +210,18 @@ async function queueSingleVideo(
         ? new Date(lastQueue.scheduled_for) 
         : undefined;
 
-      // Calculate scheduled time, allow custom interval
-      const postTime = scheduledTime || calculateNextPostingTime(lastTime, minHoursBetweenPosts);
+      // Calculate scheduled time, ensure it's in the future and respects timezone
+      let postTime = scheduledTime || calculateNextPostingTime(lastTime, minHoursBetweenPosts);
+      const now = new Date();
+      if (postTime < now) {
+        // If scheduled time is in the past, schedule for 1 hour from now
+        postTime = new Date(now.getTime() + 60 * 60 * 1000);
+      }
+      // Optionally adjust for APP_TIMEZONE if set
+      const tz = process.env.APP_TIMEZONE || 'UTC';
+      // If you want to use a library like luxon or date-fns-tz for timezone handling, add here
+      // For now, just log the intended timezone
+      console.log(`Scheduling post for ${platform} at ${postTime.toISOString()} (${tz})`);
 
       // Insert into posting queue
       const { data: queuedItem, error: insertError } = await supabase

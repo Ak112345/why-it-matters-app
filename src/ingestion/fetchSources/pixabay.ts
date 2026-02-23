@@ -2,7 +2,7 @@
  * Fetch video clips from Pixabay API
  */
 
-import { ENV } from '../../utils/env';
+import { ENV } from '../../utils/env.ts';
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const cache = new Map<string, { expiresAt: number; data: PixabayResponse }>();

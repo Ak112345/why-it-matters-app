@@ -88,17 +88,17 @@ export async function directorApproveContent(
     detectedPillar
   );
 
-  // Decision logic (adjusted for more lenient approval)
-  if (validation.isValid && validation.score >= 50) {
-    // Medium-high quality - auto approve
+  // Loosened approval logic
+  if (validation.isValid && validation.score >= 30) {
+    // Lower threshold for auto approval
     status = ContentStatus.APPROVED;
     approval = ApprovalLevel.AUTOMATIC;
-  } else if (validation.score >= 35) {
-    // Lower quality - needs review
+  } else if (validation.score >= 20) {
+    // Even lower threshold for review
     status = ContentStatus.QA_PENDING;
     approval = ApprovalLevel.EDITOR_REVIEW;
   } else {
-    // Low quality - reject
+    // Only reject if score is very low
     status = ContentStatus.REJECTED;
     approval = ApprovalLevel.REJECTED;
   }

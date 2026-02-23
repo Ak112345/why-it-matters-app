@@ -2,7 +2,7 @@
  * Fetch video clips from Pexels API
  */
 
-import { ENV } from '../../utils/env';
+import { ENV } from '../../utils/env.ts';
 
 export interface PexelsVideo {
   id: number;

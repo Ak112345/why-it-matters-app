@@ -1,3 +1,5 @@
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
 const required = (key: string): string => {
   const value = process.env[key];
   if (!value) {

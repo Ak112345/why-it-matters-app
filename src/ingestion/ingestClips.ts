@@ -1,11 +1,11 @@
-import { supabase } from '../utils/supabaseClient';
-import { ENV } from '../utils/env';
+import { supabase } from '../utils/supabaseClient.ts';
+import { ENV } from '../utils/env.ts';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { uploadRawClip } from '../utils/storage';
-import { fetchPexelsClips } from './fetchSources/pexels';
-import { fetchPixabayClips } from './fetchSources/pixabay';
+import { uploadRawClip } from '../utils/storage.ts';
+import { fetchPexelsClips } from './fetchSources/pexels.ts';
+import { fetchPixabayClips } from './fetchSources/pixabay.ts';
 
 export async function ingestClips(query: string) {
   let pexels: any[] = [];

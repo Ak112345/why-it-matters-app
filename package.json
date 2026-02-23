@@ -1,5 +1,5 @@
 {
-  "type": "module",
+  "type": "commonjs",
   "name": "why-it-matters-app",
   "version": "0.1.0",
   "private": true,
@@ -43,6 +43,7 @@
     "dotenv": "^17.3.1",
     "eslint": "^8.57.1",
     "eslint-config-next": "^14.1.0",
+    "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   }
 }
