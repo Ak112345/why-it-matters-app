@@ -13,7 +13,7 @@ import { contentCalendar } from '../../../../src/intelligence/contentCalendar';
  * GET /api/content/generate
  */
 
-interface GenerationResult {
+type GenerationResult = {
   stage: string;
   success: boolean;
   count: number;
@@ -231,6 +231,7 @@ export async function GET() {
       { status: 500 }
     );
   }
+}
 
 export async function POST() {
   // Allow POST for manual triggers
