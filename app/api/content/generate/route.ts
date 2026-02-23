@@ -4,7 +4,7 @@
  * GET /api/content/generate
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { ingestClips } from '../../../../src/ingestion/ingestClips';
 import { segmentClips } from '../../../../src/ingestion/segmentClips';
 import { analyzeClip } from '../../../../src/analysis/analyzeClip';
