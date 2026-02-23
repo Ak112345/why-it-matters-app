@@ -233,8 +233,6 @@ export async function GET() {
   }
 }
 
-export async function POST() {
   // Allow POST for manual triggers
   return GET();
-}
 }

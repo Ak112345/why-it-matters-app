@@ -1,17 +1,12 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/src/utils/supabaseClient';
 
-export interface AttentionItem {
+type AttentionItem = {
   id: string;
   type: 'failed_publish' | 'attribution_needed' | 'stuck_upload';
   title: string;
-  description: string;
-  videoId?: string;
-  clipId?: string;
-  platform?: string;
-  timestamp: string;
-}
 
+export async function GET() {
   try {
     const items: AttentionItem[] = [];
     const debug: Record<string, unknown> = {};
@@ -87,7 +82,6 @@ export interface AttentionItem {
 
     // 3. Check for stuck uploads (videos in processing/uploading for >30 minutes)
     const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-    
     const { data: stuckVideos, error: stuckError } = await supabase
       .from('videos_final')
       .select(`
@@ -141,6 +135,14 @@ export interface AttentionItem {
       },
       debug,
     });
+  } catch (error) {
+    console.error('Error fetching attention items:', error);
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : 'Failed to fetch attention items', stack: error instanceof Error ? error.stack : undefined },
+      { status: 500 }
+    );
+  }
+}
   } catch (error) {
     console.error('Error fetching attention items:', error);
     return NextResponse.json(

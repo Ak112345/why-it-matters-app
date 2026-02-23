@@ -2,10 +2,7 @@ services:
   - type: web
     name: why-it-matters-app
     env: node
-    buildCommand: |
-      mkdir -p /cache/.next/cache
-      ln -sfn /cache/.next/cache .next/cache
-      pnpm install && pnpm build
+    buildCommand: mkdir -p /cache/.next/cache && ln -sfn /cache/.next/cache .next/cache && pnpm install && pnpm build
     startCommand: pnpm start
     plan: free
     disks:

@@ -2,9 +2,11 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"]
+      "@/*": [
+        "./*"
+      ]
     },
-    "target": "es2020",
+    "target": "ESNext",
     "useDefineForClassFields": true,
     "lib": [
       "es2020",
@@ -12,10 +14,8 @@
       "dom.iterable"
     ],
     "jsx": "preserve",
-    "module": "esnext",
+    "module": "ESNext",
     "skipLibCheck": true,
-          "target": "ESNext",
-          "module": "ESNext",
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
@@ -38,7 +38,8 @@
       {
         "name": "next"
       }
-    ]
+    ],
+    "esModuleInterop": true
   },
   "include": [
     "next-env.d.ts",
@@ -47,6 +48,19 @@
     ".next/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    ".next",
+    "dist",
+    "build",
+    "out",
+    "coverage",
+    ".turbo",
+    ".vercel",
+    "tmp",
+    "temp",
+    "downloads",
+    "videos",
+    "output",
+    "generated"
   ]
 }
