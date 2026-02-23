@@ -1,11 +1,11 @@
 {
-  "type": "commonjs",
+  "type": "module",
   "name": "why-it-matters-app",
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@10.23.0",
   "engines": {
-    "node": ">=18"
+    "node": "^25.6.1"
   },
   "scripts": {
     "dev": "next dev",

@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: why-it-matters-app
+    env: node
+    buildCommand: pnpm install && pnpm build
+    startCommand: pnpm start
+    plan: free
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Add all required env vars in the Render dashboard, not here for security

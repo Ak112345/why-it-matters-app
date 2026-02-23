@@ -53,9 +53,6 @@ export async function fetchPexelsVideos(
 ): Promise<FetchedClip[]> {
   try {
     const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=${perPage}&page=${page}`;
-
-  import { ENV } from '../../utils/env';
-
     const response = await fetch(url, {
       headers: {
         Authorization: ENV.PEXELS_API_KEY,
