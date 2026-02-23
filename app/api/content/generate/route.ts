@@ -45,20 +45,6 @@ function getTodaysPlatform(): 'instagram' | 'youtube_shorts' | 'all' {
 
 export async function GET(request: NextRequest) {
   try {
-    // Verify the request is from Vercel Cron or authorized user (security check)
-    const authHeader = request.headers.get('authorization');
-    const cronSecret = process.env.VERCEL_CRON_SECRET;
-    
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      console.warn('Unauthorized content generation request attempt');
-      if (process.env.NODE_ENV === 'production') {
-        return NextResponse.json(
-          { success: false, error: 'Unauthorized' },
-          { status: 401 }
-        );
-      }
-    }
-
     console.log('[DAILY CONTENT] Starting automated content generation...');
 
     const results: GenerationResult[] = [];

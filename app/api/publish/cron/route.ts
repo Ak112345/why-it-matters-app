@@ -10,20 +10,6 @@ import { publishVideo, type PublishResult } from '../../../../src/distribution/p
 
 export async function GET(request: NextRequest) {
   try {
-    // Verify the request is from Vercel Cron (security check)
-    const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${process.env.VERCEL_CRON_SECRET}`) {
-      console.warn('Unauthorized cron request attempt');
-      // In production, you should return 401
-      // For now, we'll allow it to work during development
-      if (process.env.NODE_ENV === 'production' && process.env.VERCEL_CRON_SECRET) {
-        return NextResponse.json(
-          { success: false, error: 'Unauthorized' },
-          { status: 401 }
-        );
-      }
-    }
-
     console.log('[CRON] Starting automated publishing check...');
 
     // Publish all pending posts that are due

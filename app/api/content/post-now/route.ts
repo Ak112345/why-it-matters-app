@@ -12,6 +12,9 @@ import { queueVideos } from '../../../../src/distribution/queueVideos';
 import { publishVideo } from '../../../../src/distribution/publishVideo';
 import { contentCalendar } from '../../../../src/intelligence/contentCalendar';
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 interface PipelineStage {
   stage: string;
   success: boolean;
