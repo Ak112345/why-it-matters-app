@@ -234,5 +234,5 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   // Allow POST for manual triggers
-  return GET(request);
+  return GET();
 }
