@@ -103,7 +103,7 @@ Analyze and provide remediation strategy.`
 /**
  * Execute specific remediation actions based on error type
  */
-async function executeRemediation(error: ErrorContext, aiAnalysis: any): Promise<RemediationResult> {
+async function executeRemediation(error: ErrorContext, aiAnalysis: Record<string, unknown>): Promise<RemediationResult> {
   switch (error.type) {
     case 'publish_failed':
       return await remediatePublishFailure(error, aiAnalysis);
@@ -133,7 +133,7 @@ async function executeRemediation(error: ErrorContext, aiAnalysis: any): Promise
 /**
  * Fix failed publish attempts
  */
-async function remediatePublishFailure(error: ErrorContext, _aiAnalysis: any): Promise<RemediationResult> {
+async function remediatePublishFailure(error: ErrorContext): Promise<RemediationResult> {
   // Check error message for common patterns
   const errorMsg = error.error_message.toLowerCase();
   
@@ -187,7 +187,7 @@ async function remediatePublishFailure(error: ErrorContext, _aiAnalysis: any): P
 /**
  * Fix stuck upload states
  */
-async function remediateStuckUpload(error: ErrorContext, _aiAnalysis: any): Promise<RemediationResult> {
+async function remediateStuckUpload(error: ErrorContext): Promise<RemediationResult> {
   // Reset upload status and retry
   const { error: updateError } = await supabase
     .from('videos_final')
@@ -220,7 +220,7 @@ async function remediateStuckUpload(error: ErrorContext, _aiAnalysis: any): Prom
 /**
  * Add missing attribution metadata
  */
-async function addMissingAttribution(error: ErrorContext, _aiAnalysis: any): Promise<RemediationResult> {
+async function addMissingAttribution(error: ErrorContext): Promise<RemediationResult> {
   // Fetch clip source info
   const { data: clip, error: fetchError } = await supabase
     .from('clips_raw')
@@ -273,7 +273,7 @@ async function addMissingAttribution(error: ErrorContext, _aiAnalysis: any): Pro
 /**
  * Retry failed analysis
  */
-async function retryAnalysis(error: ErrorContext, _aiAnalysis: any): Promise<RemediationResult> {
+async function retryAnalysis(error: ErrorContext): Promise<RemediationResult> {
   const { error: updateError } = await supabase
     .from('clips_segmented')
     .update({
@@ -302,7 +302,7 @@ async function retryAnalysis(error: ErrorContext, _aiAnalysis: any): Promise<Rem
 /**
  * Retry failed production
  */
-async function retryProduction(error: ErrorContext, _aiAnalysis: any): Promise<RemediationResult> {
+async function retryProduction(error: ErrorContext): Promise<RemediationResult> {
   // Check if FFmpeg encoding error
   if (error.error_message.includes('codec') || error.error_message.includes('encoding')) {
     // Try with more compatible settings

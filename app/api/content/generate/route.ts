@@ -1,15 +1,17 @@
+
 import { NextResponse } from 'next/server';
 import { ingestClips } from '../../../../src/ingestion/ingestClips';
 import { segmentClips } from '../../../../src/ingestion/segmentClips';
 import { analyzeClip } from '../../../../src/analysis/analyzeClip';
+import { produceVideo } from '../../../../src/production/produceVideo';
+import { queueVideos } from '../../../../src/distribution/queueVideos';
+import { contentCalendar } from '../../../../src/intelligence/contentCalendar';
+
 /**
  * API endpoint for daily automated content generation
  * Orchestrates the full pipeline: ingest → analyze → produce → queue
  * GET /api/content/generate
  */
-import { produceVideo } from '../../../../src/production/produceVideo';
-import { queueVideos } from '../../../../src/distribution/queueVideos';
-import { contentCalendar } from '../../../../src/intelligence/contentCalendar';
 
 interface GenerationResult {
   stage: string;
@@ -26,6 +28,7 @@ function getTodaysPillar(): string {
   const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
   const today = days[new Date().getDay()];
   return contentCalendar[today].pillar;
+}
 
 /**
  * Get today's platform priority from the calendar
