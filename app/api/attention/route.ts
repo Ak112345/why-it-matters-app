@@ -12,7 +12,6 @@ type AttentionItem = {
   timestamp?: string;
 };
 
-export async function GET() {
   try {
     const items: AttentionItem[] = [];
     const debug: Record<string, unknown> = {};
