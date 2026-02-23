@@ -21,6 +21,8 @@
     "remediation:once": "ts-node scripts/remediation-service.ts once"
   },
   "dependencies": {
+    "ts-node": "^10.9.1",
+    "typescript": "^5.0.0",
     "@supabase/supabase-js": "^2.39.0",
     "ffmpeg-static": "^5.2.0",
     "fluent-ffmpeg": "^2.1.2",
