@@ -1,5 +1,5 @@
 // Temporary local test for storage download
-import { downloadFile } from '../src/utils/storage.ts';
+import { downloadFile } from '../src/utils/storage';
 
 async function testDownload() {
   const bucket = 'segmented_clips';

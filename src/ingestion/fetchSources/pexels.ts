@@ -2,7 +2,7 @@
  * Fetch video clips from Pexels API
  */
 
-import { ENV } from '../../utils/env.ts';
+import { ENV } from '../../utils/env';
 
 export interface PexelsVideo {
   id: number;
@@ -53,6 +53,8 @@ export async function fetchPexelsVideos(
 ): Promise<FetchedClip[]> {
   try {
     const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=${perPage}&page=${page}`;
+
+  import { ENV } from '../../utils/env';
 
     const response = await fetch(url, {
       headers: {

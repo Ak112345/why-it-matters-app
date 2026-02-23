@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient.ts';
+import { supabase } from './supabaseClient';
 import fs from 'fs';
 
 async function uploadToBucket(
