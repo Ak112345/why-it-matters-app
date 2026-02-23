@@ -11,7 +11,7 @@ export interface ErrorContext {
   type: 'publish_failed' | 'upload_stuck' | 'analysis_failed' | 'production_failed' | 'missing_attribution';
   entity: string; // video title or clip ID
   error_message: string;
-  metadata: any;
+  metadata: Record<string, unknown>;
   timestamp: string;
 }
 

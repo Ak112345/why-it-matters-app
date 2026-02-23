@@ -321,7 +321,13 @@ export async function queueVideos(options: QueueVideoOptions = {}): Promise<Queu
 /**
  * Get upcoming posts in the queue
  */
-export async function getUpcomingPosts(limit: number = 20): Promise<any[]> {
+export interface UpcomingPost {
+  id: string;
+  scheduledAt: string;
+  // Add other relevant fields here
+}
+
+export async function getUpcomingPosts(limit: number = 20): Promise<UpcomingPost[]> {
   const { data, error } = await supabase
     .from('posting_queue')
     .select(`

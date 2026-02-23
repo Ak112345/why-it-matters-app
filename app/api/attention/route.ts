@@ -12,10 +12,9 @@ export interface AttentionItem {
   timestamp: string;
 }
 
-export async function GET() {
   try {
     const items: AttentionItem[] = [];
-    const debug: any = {};
+    const debug: Record<string, unknown> = {};
 
     // 1. Check for failed publishes
     const { data: failedPublishes, error: failedError } = await supabase
@@ -42,17 +41,16 @@ export async function GET() {
       console.error('Error fetching failed publishes:', failedError);
       debug.failedError = failedError;
     } else if (failedPublishes) {
-      for (const publish of failedPublishes) {
-        const publishData = publish as any;
-        const hook = publishData.videos_final?.analysis?.hook || 'Untitled';
+      for (const publish of failedPublishes as Array<Record<string, any>>) {
+        const hook = publish.videos_final?.analysis?.hook || 'Untitled';
         items.push({
-          id: publishData.id,
+          id: publish.id,
           type: 'failed_publish',
           title: 'Failed publish',
-          description: `${publishData.platform} · "${hook}"`,
-          videoId: publishData.video_id,
-          platform: publishData.platform,
-          timestamp: publishData.updated_at || new Date().toISOString(),
+          description: `${publish.platform} · "${hook}"`,
+          videoId: publish.video_id,
+          platform: publish.platform,
+          timestamp: publish.updated_at || new Date().toISOString(),
         });
       }
     }
@@ -76,7 +74,7 @@ export async function GET() {
       console.error('Error fetching Pixabay clips:', pixabayError);
       debug.pixabayError = pixabayError;
     } else if (pixabayClips && pixabayClips.length > 0) {
-      const firstClip = pixabayClips[0] as any;
+      const firstClip = pixabayClips[0] as { id: string; created_at: string };
       // Add one summary item for all Pixabay clips needing attribution
       items.push({
         id: 'pixabay-attribution',
@@ -115,18 +113,17 @@ export async function GET() {
       console.error('Error fetching stuck videos:', stuckError);
       debug.stuckError = stuckError;
     } else if (stuckVideos) {
-      for (const video of stuckVideos) {
-        const videoData = video as any;
-        const hook = videoData.analysis?.hook || 'Untitled';
-        const platform = videoData.posting_queue?.[0]?.platform || 'Unknown';
+      for (const video of stuckVideos as Array<Record<string, any>>) {
+        const hook = video.analysis?.hook || 'Untitled';
+        const platform = Array.isArray(video.posting_queue) && video.posting_queue.length > 0 ? video.posting_queue[0].platform : 'Unknown';
         items.push({
-          id: videoData.id,
+          id: video.id,
           type: 'stuck_upload',
           title: 'Stuck upload',
           description: `${platform} · "${hook}"`,
-          videoId: videoData.id,
+          videoId: video.id,
           platform,
-          timestamp: videoData.updated_at || new Date().toISOString(),
+          timestamp: video.updated_at || new Date().toISOString(),
         });
       }
     }

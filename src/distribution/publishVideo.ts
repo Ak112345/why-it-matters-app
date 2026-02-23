@@ -112,7 +112,7 @@ async function publishSingleVideo(
       };
     }
 
-    const video = (queueItem as any).videos_final;
+    const video = (queueItem as { videos_final: { id: string; file_path: string; analysis?: { caption: string; hashtags: string[] } } }).videos_final;
     const analysis = video?.analysis;
 
     if (!video || !analysis) {
@@ -144,7 +144,7 @@ async function publishSingleVideo(
     }
 
     // Update queue item status
-    const updateData: any = {
+    const updateData: Record<string, unknown> = {
       status: publishResult.success ? 'posted' : 'failed',
       posted_at: publishResult.success ? new Date().toISOString() : null,
       error_message: publishResult.error || null,
