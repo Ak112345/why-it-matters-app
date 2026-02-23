@@ -43,7 +43,7 @@ function getTodaysPlatform(): 'instagram' | 'youtube_shorts' | 'all' {
   return 'all';
 }
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     console.log('[DAILY CONTENT] Starting automated content generation...');
 
