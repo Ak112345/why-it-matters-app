@@ -112,26 +112,25 @@ export async function assignReviewTask(
   taskId: string,
   editorId: string
 ): Promise<boolean> {
-  try {
-    const { error } = await supabase
-      .from('review_tasks')
-      .update({
-        assigned_to: editorId,
-        stage: ReviewStage.IN_REVIEW,
-        updated_at: new Date().toISOString(),
-      } as any)
-      .eq('id', taskId);
+  const taskIdNum = Number(taskId);
+  if (!Number.isFinite(taskIdNum)) {
+    throw new Error(`Invalid taskId (expected number): ${taskId}`);
+  }
+  const { error } = await supabase
+    .from('review_tasks')
+    .update({
+      assigned_to: editorId,
+      stage: ReviewStage.IN_REVIEW,
+      updated_at: new Date().toISOString(),
+    } as any)
+    .eq('id', taskIdNum);
 
-    if (error) {
-      console.error('Error assigning task:', error);
-      return false;
-    }
-
-    return true;
-  } catch (error) {
+  if (error) {
     console.error('Error assigning task:', error);
     return false;
   }
+
+  return true;
 }
 
 /**
@@ -155,7 +154,7 @@ export async function submitApproval(
         decided_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       } as any)
-      .eq('id', taskId);
+      .eq('id', Number(taskId));
 
     if (error) {
       console.error('Error submitting approval:', error);
@@ -267,7 +266,7 @@ export async function archiveReviewTask(taskId: string): Promise<boolean> {
         stage: ReviewStage.ARCHIVED,
         updated_at: new Date().toISOString(),
       } as any)
-      .eq('id', taskId);
+      .eq('id', Number(taskId));
 
     if (error) {
       console.error('Error archiving task:', error);
