@@ -5,6 +5,12 @@ type AttentionItem = {
   id: string;
   type: 'failed_publish' | 'attribution_needed' | 'stuck_upload';
   title: string;
+  description: string;
+  videoId?: string;
+  clipId?: string;
+  platform?: string;
+  timestamp?: string;
+};
 
 export async function GET() {
   try {

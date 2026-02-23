@@ -231,8 +231,8 @@ export async function GET() {
       { status: 500 }
     );
   }
-}
 
+export async function POST() {
   // Allow POST for manual triggers
   return GET();
 }
