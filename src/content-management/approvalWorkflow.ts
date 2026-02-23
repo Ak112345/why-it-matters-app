@@ -120,7 +120,7 @@ export async function assignReviewTask(
         stage: ReviewStage.IN_REVIEW,
         updated_at: new Date().toISOString(),
       } as any)
-      .eq('id', parseInt(taskId));
+      .eq('id', taskId);
 
     if (error) {
       console.error('Error assigning task:', error);
@@ -155,7 +155,7 @@ export async function submitApproval(
         decided_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       } as any)
-      .eq('id', parseInt(taskId));
+      .eq('id', taskId);
 
     if (error) {
       console.error('Error submitting approval:', error);
@@ -267,7 +267,7 @@ export async function archiveReviewTask(taskId: string): Promise<boolean> {
         stage: ReviewStage.ARCHIVED,
         updated_at: new Date().toISOString(),
       } as any)
-      .eq('id', parseInt(taskId));
+      .eq('id', taskId);
 
     if (error) {
       console.error('Error archiving task:', error);
