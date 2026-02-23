@@ -1,13 +1,12 @@
+import { NextResponse } from 'next/server';
+import { ingestClips } from '../../../../src/ingestion/ingestClips';
+import { segmentClips } from '../../../../src/ingestion/segmentClips';
+import { analyzeClip } from '../../../../src/analysis/analyzeClip';
 /**
  * API endpoint for daily automated content generation
  * Orchestrates the full pipeline: ingest → analyze → produce → queue
  * GET /api/content/generate
  */
-
-import { NextResponse } from 'next/server';
-import { ingestClips } from '../../../../src/ingestion/ingestClips';
-import { segmentClips } from '../../../../src/ingestion/segmentClips';
-import { analyzeClip } from '../../../../src/analysis/analyzeClip';
 import { produceVideo } from '../../../../src/production/produceVideo';
 import { queueVideos } from '../../../../src/distribution/queueVideos';
 import { contentCalendar } from '../../../../src/intelligence/contentCalendar';
