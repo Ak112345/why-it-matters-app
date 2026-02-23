@@ -18,7 +18,6 @@ interface GenerationResult {
   count: number;
   data?: Record<string, unknown>;
   error?: string;
-}
 
 /**
  * Get today's content pillar from the calendar
