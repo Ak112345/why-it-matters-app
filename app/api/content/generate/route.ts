@@ -27,7 +27,6 @@ function getTodaysPillar(): string {
   const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
   const today = days[new Date().getDay()];
   return contentCalendar[today].pillar;
-}
 
 /**
  * Get today's platform priority from the calendar
