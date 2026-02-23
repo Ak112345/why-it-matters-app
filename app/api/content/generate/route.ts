@@ -232,7 +232,7 @@ export async function GET() {
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST() {
   // Allow POST for manual triggers
-  return GET();
+  return GET(); // Ensure GET expects zero arguments
 }
