@@ -5,7 +5,7 @@
 DROP TABLE IF EXISTS review_tasks CASCADE;
 
 CREATE TABLE review_tasks (
-  id BIGSERIAL PRIMARY KEY,
+  id TEXT PRIMARY KEY,
   clip_id UUID NOT NULL REFERENCES clips_raw(id) ON DELETE CASCADE,
   
   -- Workflow Stages
