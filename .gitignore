@@ -1,3 +1,5 @@
+# Ignore large model files
+models/*.bin
 # Dependencies
 node_modules/
 .pnp
