@@ -43,9 +43,10 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const searchParams = request.nextUrl.searchParams;
+    // @ts-ignore: nextUrl is specific to Next.js API routes
+    const searchParams = request.nextUrl?.searchParams || new URL(request.url).searchParams;
     const action = searchParams.get('action');
 
     if (action === 'director-brief') {
