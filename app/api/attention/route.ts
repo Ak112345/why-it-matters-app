@@ -149,11 +149,4 @@ export async function GET() {
     );
   }
 }
-  } catch (error) {
-    console.error('Error fetching attention items:', error);
-    return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : 'Failed to fetch attention items', stack: error instanceof Error ? error.stack : undefined },
-      { status: 500 }
-    );
-  }
 }
