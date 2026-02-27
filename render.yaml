@@ -2,14 +2,11 @@ services:
   - type: web
     name: why-it-matters-app
     env: node
-    buildCommand: mkdir -p /cache/.next/cache && ln -sfn /cache/.next/cache .next/cache && pnpm install && pnpm build
+    buildCommand: npm install -g pnpm && pnpm install && pnpm build
     startCommand: pnpm start
     plan: free
-    disks:
-      - name: buildcache
-        mountPath: /cache
-        sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
-      # Add all required env vars in the Render dashboard, not here for security
+      - key: NODE_VERSION
+        value: 20.11.0
