@@ -4,7 +4,7 @@ import { Database } from '../types/database';
 import { ENV } from '../utils/env';
 
 const openai = new OpenAI({ apiKey: ENV.OPENAI_API_KEY });
-const supabase = createClient<Database>(ENV.SUPABASE_URL, ENV.SUPABASE_SERVICE_ROLE_KEY);
+const supabase = createClient<Database>(ENV.SUPABASE_URL || "https://placeholder.supabase.co", ENV.SUPABASE_SERVICE_ROLE_KEY || "placeholder");
 
 export interface ErrorContext {
   id: string;

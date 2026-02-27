@@ -4,7 +4,7 @@ import { Database } from '@/src/types/database';
 import { ENV } from '@/src/utils/env';
 import { analyzeAndRemediateError, ErrorContext } from '@/src/services/autoRemediate';
 
-const supabase = createClient<Database>(ENV.SUPABASE_URL, ENV.SUPABASE_SERVICE_ROLE_KEY);
+const supabase = createClient<Database>(ENV.SUPABASE_URL || "https://placeholder.supabase.co", ENV.SUPABASE_SERVICE_ROLE_KEY || "placeholder");
 
 /**
  * Error Detection & Auto-Remediation Agent
