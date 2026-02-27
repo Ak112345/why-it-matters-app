@@ -1,9 +1,12 @@
 services:
   - type: web
-    name: why-it-matters-app
+  disks:
+    name: buildcache
     env: node
-    buildCommand: npm install -g pnpm && pnpm install && pnpm build
+    mountPath: /cache
+    buildCommand: mkdir -p /cache/.next/cache && ln -sfn /cache/.next/cache .next/cache && pnpm install && pnpm build
     startCommand: pnpm start
+    sizeGB: 1
     plan: free
     envVars:
       - key: NODE_ENV
