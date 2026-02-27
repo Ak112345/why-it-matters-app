@@ -1,0 +1,51 @@
+{
+  "pipeline": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**"],
+      "env": [
+        "NEXT_PUBLIC_API_URL",
+        "NEXT_PUBLIC_SUPABASE_URL",
+        "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "SUPABASE_PROJECT_ID",
+        "SUPABASE_JWT_SECRET",
+        "SUPABASE_CRON_SECRET",
+        "QUIET_HOURS_API_URL",
+        "QUIET_HOURS_API_KEY",
+        "PEXELS_API_KEY",
+        "PIXABAY_USERNAME",
+        "PIXABABY_API_KEY",
+        "REPLICATE_API_TOKEN",
+        "REPLICATE_WEBHOOK_URL",
+        "REPLICATE_WEBHOOK_SECRET",
+        "GOOGLECLOUD_CLIENT_ID",
+        "GOOGLECLOUD_CLIENT_SECRET",
+        "GOOGLE_DRIVE_CLIENT_ID",
+        "YOUTUBE_CLIENT_SECRET",
+        "YOUTUBE_ACCESS_TOKEN",
+        "YOUTUBE_REFRESH_TOKEN",
+        "YOUTUBE_API_KEY",
+        "FFMPEG_PATH",
+        "OPENAI_API_SECRET_KEY",
+        "OPENAI_PROJECT_ID",
+        "OPENAI_API_KEY",
+        "APP_TIMEZONE",
+        "EDGE_FUNCTION_URL",
+        "CRON_SECERT",
+        "JULES_API_KEY",
+        "RENDER_API_KEY",
+        "RENDER_DEPLOY_HOOK",
+        "FACEBOOK_PAGE_ID",
+        "META_APP_ID",
+        "INSTAGRAM_BUSINESS_ID",
+        "INSTAGRAM_APP_SECRET",
+        "INSTAGRAM_APP_ID",
+        "FACEBOOK_PAGE_ACESS_TOKEN"
+      ]
+    }
+  },
+  "globalEnv": [
+    "NODE_ENV"
+  ]
+}
