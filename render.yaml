@@ -1,7 +1,7 @@
 services:
   - type: web
     env: node
-    buildCommand: pnpm install && rm -f next.config.js && pnpm turbo run build
+    buildCommand: pnpm install && rm -f next.config.js && pnpm dlx turbo run build
     startCommand: pnpm start
     plan: free
     envVars:
