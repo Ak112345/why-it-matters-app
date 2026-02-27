@@ -123,7 +123,7 @@ async function publishSingleVideo(
 
     // Get public URL for the video
     const { data: urlData } = supabase.storage
-      .from('final_videos')
+      .from('videos_final')
       .getPublicUrl(video.file_path);
 
     const videoUrl = urlData.publicUrl;
@@ -218,14 +218,14 @@ export async function publishVideo(options: PublishOptions = {}): Promise<Publis
       .from('posting_queue')
       .select('id')
       .eq('status', 'pending')
-      .lte('scheduled_time', now);
+      .lte('scheduled_for', now);
 
     // Filter by platform if specified
     if (platform) {
       query = query.eq('platform', platform);
     }
 
-    const { data: queueItems, error: fetchError } = await query.order('scheduled_time', {
+    const { data: queueItems, error: fetchError } = await query.order('scheduled_for', {
       ascending: true,
     });
 
