@@ -1,18 +1,15 @@
-/**
- * Typed Supabase client for server-side operations
- */
+import { createClient } from "@supabase/supabase-js";
 
-import { createClient } from '@supabase/supabase-js';
-import { ENV } from './env';
-import type { Database } from '../types/database';
+let _supabase: ReturnType<typeof createClient> | null = null;
 
-/**
- * Server-side Supabase client with service role key
- * Use this for API routes and server-side operations
- */
-export const supabase = createClient<Database>(
-  ENV.SUPABASE_URL,
-  ENV.SUPABASE_SERVICE_ROLE_KEY
-);
+export const supabase = new Proxy({} as ReturnType<typeof createClient>, {
+  get(_target, prop) {
+      const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+      const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "";
+      _supabase = createClient(url, key);
+    }
+    return (_supabase as Record<string | symbol, unknown>)[prop];
+  }
+});
 
 export type TypedSupabaseClient = typeof supabase;
