@@ -1,3 +1,6 @@
+export const maxDuration = 300;
+
+
 
 import { NextResponse } from 'next/server';
 import { ingestClips } from '../../../../src/ingestion/ingestClips';
@@ -6,6 +9,7 @@ import { analyzeClip } from '../../../../src/analysis/analyzeClip';
 import { produceVideo } from '../../../../src/production/produceVideo';
 import { queueVideos } from '../../../../src/distribution/queueVideos';
 import { contentCalendar } from '../../../../src/intelligence/contentCalendar';
+import { supabase } from '../../../../src/utils/supabaseClient';
 
 /**
  * API endpoint for daily automated content generation
@@ -17,7 +21,7 @@ type GenerationResult = {
   stage: string;
   success: boolean;
   count: number;
-  data?: Record<string, unknown>;
+  data?: unknown;
   error?: string;
 };
 
@@ -98,9 +102,6 @@ export async function GET() {
 
       console.log(`[DAILY CONTENT] ✓ Segmented ${segmentResults.length} clips into ${totalSegments} segments`);
 
-      if (totalSegments === 0) {
-        throw new Error('No segments were created');
-      }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       console.error('[DAILY CONTENT] ✗ Segmentation failed:', errorMsg);
@@ -118,8 +119,9 @@ export async function GET() {
     try {
       console.log('[DAILY CONTENT] Step 3: Analyzing segments...');
       // Extract all segment IDs from the segment results
-      const allSegmentIds = segmentResults.flatMap(r => r.segmentIds);
-      analysisIds = await analyzeClip({ segmentIds: allSegmentIds, batchSize: 12 });
+      const { data: existingSegments } = await supabase.from('clips_segmented').select('id').limit(500);
+      const allSegmentIds = existingSegments?.map(s => s.id) ?? [];
+      analysisIds = await analyzeClip({ batchSize: 12 });
       
       results.push({
         stage: 'analyze',

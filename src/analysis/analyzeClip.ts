@@ -5,7 +5,6 @@
 
 import { supabase } from '../utils/supabaseClient';
 import { ENV } from '../utils/env';
-import { buildAnalysisPrompt } from '../intelligence/analysisPrompt';
 import { directorApproveContent } from '../content-management/contentDirector';
 import OpenAI from 'openai';
 
@@ -24,120 +23,134 @@ export interface AnalysisResult {
 }
 
 export interface AnalyzeClipOptions {
-  segmentId?: string; // If provided, analyze only this segment
-  segmentIds?: string[]; // If provided, analyze these specific segments
-  batchSize?: number; // Number of segments to analyze at once
+  segmentId?: string;
+  segmentIds?: string[];
+  batchSize?: number;
+}
+
+/**
+ * Fetch Pexels video metadata to use as context for analysis
+ */
+async function fetchPexelsMetadata(sourceId: string): Promise<Record<string, any> | null> {
+  const apiKey = process.env.PEXELS_API_KEY;
+  if (!apiKey) return null;
+
+  const numericId = sourceId.replace(/^pexels_/, '');
+  try {
+    const response = await fetch(`https://api.pexels.com/videos/videos/${numericId}`, {
+      headers: { Authorization: apiKey },
+    });
+    if (!response.ok) return null;
+    const data = await response.json() as any;
+    return {
+      title: data.url?.split('/').filter(Boolean).pop()?.replace(/-/g, ' ') ?? '',
+      duration: data.duration,
+      width: data.width,
+      height: data.height,
+      user: data.user?.name ?? '',
+      tags: data.tags?.map((t: any) => t.title) ?? [],
+      url: data.url,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Generate analysis for a video segment using OpenAI
- * Uses Vision API to analyze the video content
+ * Uses Pexels metadata as context since GPT-4o can't watch videos
  */
 async function generateAnalysis(
   segmentId: string,
-  videoUrl: string,
-  metadata?: Record<string, any>
+  source: string,
+  sourceId: string,
+  startTime: number,
+  endTime: number,
 ): Promise<AnalysisResult> {
-  try {
-    const prompt = buildAnalysisPrompt({
-      videoUrl,
-      metadata,
-    });
+  // Get rich metadata from source API
+  let metadata: Record<string, any> = { source, sourceId, startTime, endTime };
+  
+  if (source === 'pexels') {
+    const pexelsMeta = await fetchPexelsMetadata(sourceId);
+    if (pexelsMeta) metadata = { ...metadata, ...pexelsMeta };
+  }
 
+  const metadataDescription = [
+    metadata.title ? `Title/topic: "${metadata.title}"` : '',
+    metadata.tags?.length ? `Tags: ${metadata.tags.join(', ')}` : '',
+    metadata.duration ? `Duration: ${metadata.duration}s` : '',
+    metadata.user ? `Creator: ${metadata.user}` : '',
+    `Segment: ${startTime}s to ${endTime}s of the clip`,
+  ].filter(Boolean).join('\n');
+
+  const prompt = `You are a content strategist for a short-form video channel called "This Is Why It Matters." The channel explains cultural events, social discussions, policy changes, and news moments with context and impact.
+
+Here is metadata about a video clip being analyzed:
+${metadataDescription}
+
+Based on this video content, generate compelling short-form social media content. Be specific and creative — avoid generic phrases like "Check this out" or "Watch this."
+
+Return JSON with these keys:
+- hook: First 3 seconds. One punchy sentence starting with "Nobody's talking about..." or "This is bigger than you think..." or "Here's what actually happened..." — make it specific to the content
+- explanation: 3-4 sentences giving context. What is this? When? Why did it happen?
+- impact_statement: 1-2 sentences on why this matters today
+- caption: 150 chars max with core topic and emotional trigger
+- hashtags_instagram: array of 5 hashtags (mix niche + broad)
+- hashtags_youtube: array of 5 hashtags
+- hashtags_facebook: array of 5 hashtags
+- content_pillar: one of "Cultural Event" | "Social Discussion" | "Public Reaction" | "News Moment" | "Internet Controversy" | "Policy Change" | "Social Shift"
+- platform_scores: object with instagram, youtube_shorts, facebook each rated 1-10
+- pacing: "Fast" | "Medium" | "Slow"
+- emotion_tag: "Outrage" | "Empathy" | "Curiosity" | "Shock" | "Pride" | "Sadness" | "Inspiration" | "Humor"
+- evergreen_or_trending: "Evergreen" | "Trending"`;
+
+  try {
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
-        {
-          role: 'system',
-          content: 'You are an expert viral content creator. Always respond with valid JSON.',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
+        { role: 'system', content: 'You are an expert viral content creator. Always respond with valid JSON. Never use generic placeholder text.' },
+        { role: 'user', content: prompt },
       ],
       response_format: { type: 'json_object' },
-      temperature: 0.7,
+      temperature: 0.8,
     });
 
-    let response;
-    try {
-      response = completion.choices[0].message.content;
-      if (!response) {
-        throw new Error('No response from OpenAI');
-      }
-    } catch (err) {
-      console.error('OpenAI completion error:', err);
-      // Return fallback analysis
-      return {
-        hook: 'Check this out',
-        explanation: 'Interesting video content',
-        caption: 'You have to see this! #viral',
-        hashtags: ['viral', 'trending', 'fyp', 'foryou', 'explore'],
-        viralityScore: 5,
-        metadata: {},
-      };
-    }
+    const response = completion.choices[0].message.content;
+    if (!response) throw new Error('No response from OpenAI');
 
-    let analysis;
-    try {
-      analysis = JSON.parse(response);
-    } catch (err) {
-      console.error('Failed to parse OpenAI response:', err, response);
-      // Return fallback analysis
-      return {
-        hook: 'Check this out',
-        explanation: 'Interesting video content',
-        caption: 'You have to see this! #viral',
-        hashtags: ['viral', 'trending', 'fyp', 'foryou', 'explore'],
-        viralityScore: 5,
-        metadata: {},
-      };
-    }
+    const analysis = JSON.parse(response);
 
-    const hashtags =
-      analysis.hashtags_instagram ||
-      analysis.hashtags ||
-      [];
+    // Reject fallback/generic responses
+    if (!analysis.hook || analysis.hook === 'Check this out' || analysis.hook === 'Watch this.') {
+      throw new Error('OpenAI returned generic hook — rejecting');
+    }
 
     const platformScores = analysis.platform_scores || {};
-    const scoreValues = Object.values(platformScores).filter(
-      (value) => typeof value === 'number'
-    ) as number[];
+    const scoreValues = Object.values(platformScores).filter(v => typeof v === 'number') as number[];
     const viralityScore = scoreValues.length > 0 ? Math.max(...scoreValues) : 5;
 
-    const metadataOutput = {
-      impact_statement: analysis.impact_statement,
-      hashtags_instagram: analysis.hashtags_instagram,
-      hashtags_youtube: analysis.hashtags_youtube,
-      hashtags_facebook: analysis.hashtags_facebook,
-      content_pillar: analysis.content_pillar,
-      platform_scores: platformScores,
-      pacing: analysis.pacing,
-      emotion_tag: analysis.emotion_tag,
-      evergreen_or_trending: analysis.evergreen_or_trending,
-    };
-
     return {
-      hook: analysis.hook || 'Check this out',
-      explanation: analysis.explanation || 'Interesting video content',
-      caption: analysis.caption || 'You have to see this! #viral',
-      hashtags,
+      hook: analysis.hook,
+      explanation: analysis.explanation || '',
+      caption: analysis.caption || '',
+      hashtags: analysis.hashtags_instagram || analysis.hashtags || [],
       viralityScore,
-      metadata: metadataOutput,
+      metadata: {
+        impact_statement: analysis.impact_statement,
+        hashtags_instagram: analysis.hashtags_instagram,
+        hashtags_youtube: analysis.hashtags_youtube,
+        hashtags_facebook: analysis.hashtags_facebook,
+        content_pillar: analysis.content_pillar,
+        platform_scores: platformScores,
+        pacing: analysis.pacing,
+        emotion_tag: analysis.emotion_tag,
+        evergreen_or_trending: analysis.evergreen_or_trending,
+        source_metadata: metadata,
+      },
     };
   } catch (error) {
     console.error(`Error generating analysis for segment ${segmentId}:`, error);
-    
-    // Return fallback analysis
-    return {
-      hook: 'Check this out',
-      explanation: 'Interesting video content',
-      caption: 'You have to see this! #viral',
-      hashtags: ['viral', 'trending', 'fyp', 'foryou', 'explore'],
-      viralityScore: 5,
-      metadata: {},
-    };
+    throw error; // Don't swallow — let caller handle and skip
   }
 }
 
@@ -145,91 +158,85 @@ async function generateAnalysis(
  * Analyze a single segment
  */
 async function analyzeSingleSegment(segmentId: string): Promise<string> {
-  try {
-    // Check if already analyzed
-    const { data: existingAnalysis } = await supabase
-      .from('analysis')
-      .select('id')
-      .eq('segment_id', segmentId)
-      .single();
+  // Check if already analyzed with a real hook (not the fallback)
+  const { data: existingAnalysis } = await supabase
+    .from('analysis')
+    .select('id, hook')
+    .eq('segment_id', segmentId)
+    .single();
 
-    if (existingAnalysis) {
-      console.log(`Segment ${segmentId} already analyzed, skipping`);
-      return (existingAnalysis as any).id;
-    }
-
-    // Fetch segment from database
-    const { data: segment, error: fetchError } = await supabase
-      .from('clips_segmented')
-      .select('*')
-      .eq('id', segmentId)
-      .single();
-
-    if (fetchError || !segment) {
-      console.error(`Segment not found: ${segmentId}`, fetchError);
-      // Return fallback analysis id or skip
-      return 'segment-not-found';
-    }
-
-    console.log(`Analyzing segment ${segmentId}...`);
-
-    // Get public URL for the video
-    const { data: urlData } = supabase.storage
-      .from('segmented_clips')
-      .getPublicUrl((segment as any).file_path);
-
-    const videoUrl = urlData.publicUrl;
-
-    // Generate analysis using OpenAI
-    const analysis = await generateAnalysis(segmentId, videoUrl, (segment as any).metadata);
-
-    // Insert into database
-    const { data: insertedAnalysis, error: insertError } = await supabase
-      .from('analysis')
-      .insert({
-        segment_id: segmentId,
-        hook: analysis.hook,
-        explanation: analysis.explanation,
-        caption: analysis.caption,
-        hashtags: analysis.hashtags,
-        virality_score: analysis.viralityScore,
-        metadata: analysis.metadata as any,
-        analyzed_at: new Date().toISOString(),
-      } as any)
-      .select()
-      .single();
-
-    if (insertError) {
-      console.error('Failed to insert analysis:', insertError);
-      // Return fallback id
-      return 'analysis-insert-failed';
-    }
-
-    // Run through content director approval workflow
-    let approval;
-    try {
-      approval = await directorApproveContent(segmentId, analysis);
-      // Update with approval status
-      await supabase
-        .from('analysis')
-        .update({
-          approval_status: approval.approval,
-          content_status: approval.status,
-          quality_score: approval.validation.score,
-        } as any)
-        .eq('id', (insertedAnalysis as any).id);
-    } catch (err) {
-      console.error('Approval workflow failed:', err);
-      // Continue without approval update
-    }
-
-    console.log(`Successfully analyzed segment ${segmentId} (score: ${analysis.viralityScore}, approval: ${approval?.approval || 'N/A'})`);
-    return (insertedAnalysis as any).id;
-  } catch (error) {
-    console.error(`Error analyzing segment ${segmentId}:`, error);
-    // Return fallback id
-    return 'analysis-failed';
+  if (existingAnalysis && existingAnalysis.hook !== 'Check this out') {
+    console.log(`Segment ${segmentId} already analyzed, skipping`);
+    return existingAnalysis.id;
   }
+
+  // If existing analysis has fake hook, delete it so we re-analyze
+  if (existingAnalysis && existingAnalysis.hook === 'Check this out') {
+    await supabase.from('analysis').delete().eq('id', existingAnalysis.id);
+    console.log(`Deleted fake analysis for segment ${segmentId}, re-analyzing`);
+  }
+
+  // Fetch segment + raw clip info
+  const { data: segment, error: fetchError } = await supabase
+    .from('clips_segmented')
+    .select('*, clips_raw(source, source_id)')
+    .eq('id', segmentId)
+    .single();
+
+  if (fetchError || !segment) {
+    throw new Error(`Segment not found: ${segmentId}`);
+  }
+
+  const rawClip = (segment as any).clips_raw;
+  if (!rawClip) {
+    throw new Error(`No raw clip linked to segment ${segmentId}`);
+  }
+
+  console.log(`Analyzing segment ${segmentId} (${rawClip.source}/${rawClip.source_id})...`);
+
+  const analysis = await generateAnalysis(
+    segmentId,
+    rawClip.source,
+    rawClip.source_id,
+    (segment as any).start_time ?? 0,
+    (segment as any).end_time ?? 10,
+  );
+
+  // Insert into database
+  const { data: insertedAnalysis, error: insertError } = await supabase
+    .from('analysis')
+    .insert({
+      segment_id: segmentId,
+      hook: analysis.hook,
+      explanation: analysis.explanation,
+      caption: analysis.caption,
+      hashtags: analysis.hashtags,
+      virality_score: analysis.viralityScore,
+      metadata: analysis.metadata as any,
+      analyzed_at: new Date().toISOString(),
+    } as any)
+    .select()
+    .single();
+
+  if (insertError) throw new Error(`Failed to insert analysis: ${insertError.message}`);
+
+  // Run through content director approval
+  try {
+    const approval = await directorApproveContent(segmentId, analysis);
+    await supabase
+      .from('analysis')
+      .update({
+        approval_status: approval.approval,
+        content_status: approval.status,
+        quality_score: approval.validation.score,
+      } as any)
+      .eq('id', (insertedAnalysis as any).id);
+  } catch (err) {
+    console.error('Approval workflow failed:', err);
+  }
+
+  console.log(`✓ Analyzed segment ${segmentId} — hook: "${analysis.hook}" (score: ${analysis.viralityScore})`);
+  return (insertedAnalysis as any).id;
 }
 
 /**
@@ -237,94 +244,68 @@ async function analyzeSingleSegment(segmentId: string): Promise<string> {
  */
 export async function analyzeClip(options: AnalyzeClipOptions = {}): Promise<string[]> {
   const { segmentId, segmentIds, batchSize = 10 } = options;
-
   const analysisIds: string[] = [];
 
-  try {
-    // If specific segment ID provided, analyze only that segment
-    if (segmentId) {
-      const id = await analyzeSingleSegment(segmentId);
-      analysisIds.push(id);
-      return analysisIds;
-    }
+  if (segmentId) {
+    const id = await analyzeSingleSegment(segmentId);
+    return [id];
+  }
 
-    // If specific segment IDs provided, analyze those
-    if (segmentIds && segmentIds.length > 0) {
-      console.log(`[DEBUG] Analyzing ${segmentIds.length} provided segment IDs`);
-      const segments = segmentIds.slice(0, batchSize);
-      
-      for (const sId of segments) {
-        try {
-          const id = await analyzeSingleSegment(sId);
-          analysisIds.push(id);
-        } catch (error) {
-          console.error(`Error analyzing segment ${sId}:`, error);
-          // Continue with next segment
-        }
-      }
-      
-      return analysisIds;
-    }
-
-    // Otherwise, analyze all segments that haven't been analyzed yet
-    // First, get all segment IDs
-    const { data: allSegments, error: fetchError } = await supabase
-      .from('clips_segmented')
-      .select('id')
-      .order('created_at', { ascending: true })
-      .limit(batchSize * 3); // Get more to account for already-analyzed ones
-
-    console.log(`[DEBUG] Fetched ${allSegments?.length || 0} total segments from database`);
-
-    if (fetchError) {
-      console.error('Error fetching segments:', fetchError);
-      throw fetchError;
-    }
-
-    if (!allSegments || allSegments.length === 0) {
-      console.log('No segments found in database');
-      return analysisIds;
-    }
-
-    // Get already analyzed segment IDs
-    const { data: analyzed } = await supabase
-      .from('analysis')
-      .select('segment_id')
-      .in('segment_id', allSegments.map((s: any) => s.id));
-
-    console.log(`[DEBUG] Found ${analyzed?.length || 0} already-analyzed segments`);
-
-    const analyzedIds = new Set((analyzed || []).map((a: any) => a.segment_id));
-    
-    // Filter to only unanalyzed segments
-    const segments = allSegments
-      .filter((s: any) => !analyzedIds.has(s.id))
-      .slice(0, batchSize);
-
-    console.log(`[DEBUG] ${segments.length} unanalyzed segments remaining after filter`);
-
-    if (!segments || segments.length === 0) {
-      console.log('No segments found to analyze');
-      return analysisIds;
-    }
-
-    console.log(`Found ${segments.length} segments to check for analysis`);
-
-    for (const segment of segments) {
+  if (segmentIds && segmentIds.length > 0) {
+    for (const sId of segmentIds.slice(0, batchSize)) {
       try {
-        const id = await analyzeSingleSegment((segment as any).id);
+        const id = await analyzeSingleSegment(sId);
         analysisIds.push(id);
       } catch (error) {
-        console.error(`Failed to analyze segment ${(segment as any).id}:`, error);
+        console.error(`Error analyzing segment ${sId}:`, error);
       }
     }
-
-    console.log(`Analysis complete: ${analysisIds.length} segments analyzed`);
     return analysisIds;
-  } catch (error) {
-    console.error('Error during analysis:', error);
-    throw error;
   }
+
+  // Batch analyze: get unanalyzed segments (or ones with fake hooks)
+  const { data: allSegments, error: fetchError } = await supabase
+    .from('clips_segmented')
+    .select('id')
+    .order('created_at', { ascending: true })
+    .limit(batchSize * 3);
+
+  if (fetchError) throw fetchError;
+  if (!allSegments || allSegments.length === 0) {
+    console.log('No segments found in database');
+    return analysisIds;
+  }
+
+  // Get already analyzed (with real hooks)
+  const { data: analyzed } = await supabase
+    .from('analysis')
+    .select('segment_id, hook')
+    .in('segment_id', allSegments.map((s: any) => s.id));
+
+  // Only skip segments that have REAL analysis (not the "Check this out" fallback)
+  const reallyAnalyzedIds = new Set(
+    (analyzed || [])
+      .filter((a: any) => a.hook && a.hook !== 'Check this out')
+      .map((a: any) => a.segment_id)
+  );
+
+  const segments = allSegments
+    .filter((s: any) => !reallyAnalyzedIds.has(s.id))
+    .slice(0, batchSize);
+
+  console.log(`Found ${segments.length} segments needing analysis`);
+
+  for (const segment of segments) {
+    try {
+      const id = await analyzeSingleSegment((segment as any).id);
+      analysisIds.push(id);
+    } catch (error) {
+      console.error(`Failed to analyze segment ${(segment as any).id}:`, error);
+    }
+  }
+
+  console.log(`Analysis complete: ${analysisIds.length} segments analyzed`);
+  return analysisIds;
 }
 
 /**
@@ -333,19 +314,11 @@ export async function analyzeClip(options: AnalyzeClipOptions = {}): Promise<str
 export async function getTopAnalyzedClips(limit: number = 10): Promise<any[]> {
   const { data, error } = await supabase
     .from('analysis')
-    .select(`
-      *,
-      clips_segmented (
-        *,
-        clips_raw (*)
-      )
-    `)
+    .select(`*, clips_segmented(*, clips_raw(*))`)
+    .neq('hook', 'Check this out')
     .order('virality_score', { ascending: false })
     .limit(limit);
 
-  if (error) {
-    throw error;
-  }
-
+  if (error) throw error;
   return data || [];
 }

@@ -15,9 +15,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger content generation
-        run: |
-          set -e
-          curl -fsS "${{ secrets.VERCEL_PRODUCTION_URL }}/api/content/generate?secret=${{ secrets.VERCEL_CRON_SECRET }}"
+          run: |
+            echo "=== BASIC ==="
+            uname -a
+            echo "=== DISK ==="
+            df -h
+            echo "=== MEMORY ==="
+            free -h || true
+            echo "=== FFMPEG ==="
+            which ffmpeg || true
+            ffmpeg -version || true
+            echo "=== FILES HERE ==="
+            ls -lah
+            set -e
+            curl -fsS "${{ secrets.VERCEL_PRODUCTION_URL }}/api/content/generate?secret=${{ secrets.VERCEL_CRON_SECRET }}"
       - name: Trigger YouTube content test run
         if: github.event_name == 'workflow_dispatch'
         run: |
