@@ -35,25 +35,47 @@ export async function produceVideo({
   } else {
     // Try to get recent real analyses (not "Check this out" placeholders)
     console.log('[produceVideo] Fetching recent analyses...');
-    let { data: recentAnalyses, error: recentError } = await supabase
-      .from('analysis')
-      .select('id, hook')
-      .order('analyzed_at', { ascending: false })
-      .limit(batchSize * 5);
-
-    if (recentError) {
-      console.error('[produceVideo] Analysis fetch error:', recentError);
-      throw new Error(`Failed to fetch analyses: ${recentError.message}`);
+    
+    // Approach 1: Try with ordering
+    let recentAnalyses = null;
+    let recentError = null;
+    
+    try {
+      const result = await supabase
+        .from('analysis')
+        .select('id, hook')
+        .order('analyzed_at', { ascending: false })
+        .limit(batchSize * 5);
+      recentAnalyses = result.data;
+      recentError = result.error;
+    } catch (e) {
+      console.warn('[produceVideo] Ordered query failed, trying without ordering:', e);
     }
 
-    console.log(`[produceVideo] Fetched ${recentAnalyses?.length || 0} analyses`);
+    // Fallback: Simple query without ordering
+    if (!recentAnalyses || recentAnalyses.length === 0) {
+      console.log('[produceVideo] Trying simple query without ordering...');
+      const result = await supabase
+        .from('analysis')
+        .select('id, hook')
+        .limit(batchSize * 10);
+      recentAnalyses = result.data;
+      recentError = result.error;
+    }
+
+    if (recentError || !recentAnalyses) {
+      console.error('[produceVideo] Analysis fetch error:', recentError);
+      throw new Error(`Failed to fetch analyses: ${recentError?.message || 'Unknown error'}`);
+    }
+
+    console.log(`[produceVideo] Fetched ${recentAnalyses.length} analyses`);
 
     // Filter to real analyses (not "Check this out" and not null)
     const realAnalyses = (recentAnalyses || [])
       .filter((row: any) => row.hook && row.hook !== 'Check this out');
     
     let candidateIds = realAnalyses.map((row: any) => row.id);
-    console.log(`[produceVideo] Found ${candidateIds.length} real analyses out of ${recentAnalyses?.length || 0}`);
+    console.log(`[produceVideo] Found ${candidateIds.length} real analyses out of ${recentAnalyses.length}`);
 
     // Fallback: if no real analyses, use all analyses
     if (candidateIds.length === 0) {
@@ -70,7 +92,7 @@ export async function produceVideo({
       const { data: existingVideos, error: videoCheckError } = await supabase
         .from('videos_final')
         .select('analysis_id')
-        .in('analysis_id', candidateIds);
+        .in('analysis_id', candidateIds.slice(0, 100)); // Check in batches if needed
 
       if (!videoCheckError) {
         alreadyProduced = new Set((existingVideos || []).map((row: any) => row.analysis_id));
@@ -86,6 +108,11 @@ export async function produceVideo({
     console.log(`[produceVideo] Selected ${targetAnalysisIds.length} unproduced analyses to process`);
 
     if (targetAnalysisIds.length === 0) {
+      console.warn('[produceVideo] No unproduced analyses found', {
+        totalCandidates: candidateIds.length,
+        alreadyProducedCount: alreadyProduced.size,
+        batchSize,
+      });
       throw new Error('No unproduced analyses found to process');
     }
   }
