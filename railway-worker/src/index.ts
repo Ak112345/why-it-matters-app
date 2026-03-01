@@ -178,7 +178,7 @@ function runFFmpeg({ inputPath, outputPath, hook, addHookOverlay, jobId, startTi
 
     const scaleAndCrop = 'scale=1080:-2,crop=1080:1920:0:(ih-1920)/2';
     const hookFilter = addHookOverlay
-      ? `,drawbox=x=0:y=ih*0.08:w=iw:h=ih*0.18:color=black@0.55:t=fill,drawtext=text='${safeHook}':fontsize=58:fontcolor=white:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:x=(w-text_w)/2:y=h*0.10:shadowcolor=black@0.8:shadowx=2:shadowy=2`
+      ? `,drawbox=x=0:y=ih*0.08:w=iw:h=ih*0.18:color=black@0.55:t=fill,drawtext=text='${safeHook}':fontsize=58:fontcolor=white:x=(w-text_w)/2:y=h*0.10:shadowcolor=black@0.8:shadowx=2:shadowy=2`
       : '';
 
     ffmpeg(inputPath)

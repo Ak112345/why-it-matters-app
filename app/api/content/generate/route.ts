@@ -58,6 +58,38 @@ export async function GET() {
 
     console.log(`[DAILY CONTENT] Today's focus: ${pillar} (Platform: ${platform})`);
 
+    // Check pipeline_settings before running
+    const { data: settings } = await supabase
+      .from('pipeline_settings')
+      .select('key, value');
+
+    const settingsMap = Object.fromEntries((settings || []).map(s => [s.key, s.value]));
+
+    // Check if production is paused
+    if (settingsMap['production_paused'] === 'true') {
+      return NextResponse.json({ 
+        success: false, 
+        message: 'Production paused — processing existing queue first',
+        queueStatus: settingsMap 
+      }, { status: 503 });
+    }
+
+    // Check queue cap
+    const { count: queuedCount } = await supabase
+      .from('videos_final')
+      .select('id', { count: 'exact' })
+      .eq('status', 'drafted');
+
+    const cap = parseInt(settingsMap['queue_cap'] || '200');
+    const resumeAt = parseInt(settingsMap['queue_resume_threshold'] || '20');
+
+    if ((queuedCount || 0) >= cap) {
+      return NextResponse.json({
+        success: false,
+        message: `Queue full (${queuedCount}/${cap}). Will resume when below ${resumeAt}.`,
+      }, { status: 503 });
+    }
+
     // Step 1: Ingest clips based on today's content pillar
     try {
       console.log(`[DAILY CONTENT] Step 1: Ingesting clips for "${pillar}"...`);
