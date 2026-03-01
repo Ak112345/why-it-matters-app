@@ -317,28 +317,43 @@ export async function analyzeClip(options: AnalyzeClipOptions = {}): Promise<str
   }
 
   // Batch analyze: get unanalyzed segments (or ones with fake hooks)
+  console.log(`[analyzeClip] Starting batch analysis, batchSize=${batchSize}`);
+  
   const { data: allSegments, error: fetchError } = await supabase
     .from('clips_segmented')
     .select('id, status')
     .order('created_at', { ascending: true })
     .limit(batchSize * 3);
 
-  if (fetchError) throw fetchError;
+  if (fetchError) {
+    console.error('[analyzeClip] Fetch error:', fetchError);
+    throw fetchError;
+  }
+  
   if (!allSegments || allSegments.length === 0) {
-    console.log('No segments found in database');
+    console.log('[analyzeClip] No segments found in database');
     return analysisIds;
   }
 
-  console.log(`[analyzeClip] Found ${allSegments.length} segments, querying existing analyses...`);
+  console.log(`[analyzeClip] Fetched ${allSegments.length} segments from DB (limit was ${batchSize * 3})`);
+  console.log(`[analyzeClip] First 3 segment IDs:`, allSegments.slice(0, 3).map((s: any) => s.id));
 
   // Get already analyzed (with real hooks)
+  const segmentIds_to_check = allSegments.map((s: any) => s.id);
+  console.log(`[analyzeClip] Checking ${segmentIds_to_check.length} segments in analysis table...`);
+  
   const { data: analyzed, error: analysisError } = await supabase
     .from('analysis')
     .select('segment_id, hook')
-    .in('segment_id', allSegments.map((s: any) => s.id));
+    .in('segment_id', segmentIds_to_check);
 
   if (analysisError) {
-    console.error('[analyzeClip] Error fetching analyses:', analysisError);
+    console.error('[analyzeClip] Analysis query error:', analysisError);
+  }
+
+  console.log(`[analyzeClip] Found ${analyzed?.length ?? 0} existing analyses`);
+  if (analyzed && analyzed.length > 0) {
+    console.log('[analyzeClip] Sample analyses:', analyzed.slice(0, 3).map((a: any) => ({ segment_id: a.segment_id, hook: a.hook?.substring(0, 30) })));
   }
 
   // Only skip segments that have REAL analysis (not the "Check this out" fallback)
@@ -348,11 +363,16 @@ export async function analyzeClip(options: AnalyzeClipOptions = {}): Promise<str
       .map((a: any) => a.segment_id)
   );
 
+  console.log(`[analyzeClip] Real analyses: ${reallyAnalyzedIds.size}`);
+  
   const segments = allSegments
     .filter((s: any) => !reallyAnalyzedIds.has(s.id))
     .slice(0, batchSize);
 
-  console.log(`[analyzeClip] Found ${segments.length} segments needing analysis (real: ${reallyAnalyzedIds.size}, total: ${allSegments.length})`);
+  console.log(`[analyzeClip] Segments needing analysis: ${segments.length} (after filtering ${allSegments.length} total)`);
+  if (segments.length > 0) {
+    console.log('[analyzeClip] First segment needing analysis:', segments[0]);
+  }
 
   let successCount = 0;
   let failureCount = 0;
@@ -364,11 +384,12 @@ export async function analyzeClip(options: AnalyzeClipOptions = {}): Promise<str
       successCount++;
     } catch (error) {
       failureCount++;
-      console.error(`Failed to analyze segment ${(segment as any).id}:`, error instanceof Error ? error.message : error);
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error(`[analyzeClip] Failed to analyze segment ${(segment as any).id}: ${msg}`);
     }
   }
 
-  console.log(`[analyzeClip] Analysis complete: ${successCount} succeeded, ${failureCount} failed`);
+  console.log(`[analyzeClip] Analysis complete: ${successCount} succeeded, ${failureCount} failed, ${analysisIds.length} total`);
   return analysisIds;
 }
 
