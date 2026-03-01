@@ -33,16 +33,26 @@ export async function produceVideo({
   } else if (analysisIds && analysisIds.length > 0) {
     targetAnalysisIds = analysisIds.slice(0, batchSize);
   } else {
-    const { data: recentAnalyses, error: recentError } = await supabase
+    // Try to get recent real analyses (not "Check this out" placeholders)
+    let { data: recentAnalyses, error: recentError } = await supabase
       .from('analysis')
-      .select('id')
-      .neq('hook', 'Check this out')
+      .select('id, hook')
       .order('analyzed_at', { ascending: false })
-      .limit(batchSize * 3);
+      .limit(batchSize * 5);
 
-    if (recentError) throw new Error(`Failed to fetch recent analyses: ${recentError.message}`);
+    if (recentError) throw new Error(`Failed to fetch analyses: ${recentError.message}`);
 
-    const candidateIds = (recentAnalyses || []).map((row: any) => row.id);
+    // Filter to real analyses (not "Check this out" and not null)
+    const realAnalyses = (recentAnalyses || [])
+      .filter((row: any) => row.hook && row.hook !== 'Check this out');
+    
+    let candidateIds = realAnalyses.map((row: any) => row.id);
+
+    // Fallback: if no real analyses, use all analyses
+    if (candidateIds.length === 0) {
+      candidateIds = (recentAnalyses || []).map((row: any) => row.id);
+    }
+
     if (candidateIds.length === 0) throw new Error('No analyses available to produce videos');
 
     const { data: existingVideos, error: videoCheckError } = await supabase
