@@ -20,6 +20,42 @@ interface ProducedVideo {
   thumbnailUrl: string;
 }
 
+async function resolveLegacyDownloadUrl(
+  source: string,
+  sourceId: string,
+  fallbackUrl: string,
+): Promise<string> {
+  if (source === 'internet_archive' && sourceId) {
+    return `https://archive.org/download/${sourceId}/${sourceId}.mp4`;
+  }
+
+  if (source === 'pexels' && sourceId) {
+    const apiKey = process.env.PEXELS_API_KEY;
+    if (!apiKey) return fallbackUrl;
+
+    try {
+      const numericId = sourceId.replace(/^pexels_/, '');
+      const response = await fetch(`https://api.pexels.com/videos/${numericId}`, {
+        headers: { Authorization: apiKey },
+      });
+      if (!response.ok) return fallbackUrl;
+
+      const data = await response.json() as any;
+      const file = data.video_files?.find(
+        (f: any) => f.quality === 'hd' && f.file_type === 'video/mp4'
+      ) || data.video_files?.find(
+        (f: any) => f.file_type === 'video/mp4'
+      ) || data.video_files?.[0];
+
+      return file?.link || fallbackUrl;
+    } catch {
+      return fallbackUrl;
+    }
+  }
+
+  return fallbackUrl;
+}
+
 export async function produceVideo({
   analysisId,
   analysisIds,
@@ -153,6 +189,7 @@ export async function produceVideo({
         segmentAccessUrl = signedUrlData.signedUrl;
       }
     }
+    segmentAccessUrl = await resolveLegacyDownloadUrl(source, source_id, segmentAccessUrl);
 
     try {
       console.log(`[produceVideo] Sending job to Railway for analysis ${analysis.id} (${source}/${source_id} ${startTime}s-${endTime}s)`);
