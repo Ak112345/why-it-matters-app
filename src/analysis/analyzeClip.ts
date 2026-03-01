@@ -221,7 +221,7 @@ async function analyzeSingleSegment(segmentId: string): Promise<string> {
   // Fetch segment + raw clip info
   const { data: segment, error: fetchError } = await supabase
     .from('clips_segmented')
-    .select('*, clips_raw(source, source_id)')
+    .select('*')
     .eq('id', segmentId)
     .single();
 
@@ -233,9 +233,15 @@ async function analyzeSingleSegment(segmentId: string): Promise<string> {
     throw new Error(`Segment ${segmentId} returned no data`);
   }
 
-  const rawClip = (segment as any).clips_raw;
-  if (!rawClip) {
-    throw new Error(`No raw clip linked to segment ${segmentId}`);
+  // Fetch raw clip separately (Supabase schema cache issue with relationships)
+  const { data: rawClip, error: rawError } = await supabase
+    .from('clips_raw')
+    .select('source, source_id')
+    .eq('id', (segment as any).raw_clip_id)
+    .single();
+
+  if (rawError || !rawClip) {
+    throw new Error(`Raw clip not found for segment ${segmentId}: ${rawError?.message ?? 'No data'}`);
   }
 
   console.log(`[analyzeSingleSegment] Analyzing ${segmentId} (${rawClip.source}/${rawClip.source_id})...`);
@@ -397,13 +403,41 @@ export async function analyzeClip(options: AnalyzeClipOptions = {}): Promise<str
  * Get top analyzed clips by virality score
  */
 export async function getTopAnalyzedClips(limit: number = 10): Promise<any[]> {
-  const { data, error } = await supabase
+  const { data: analyses, error } = await supabase
     .from('analysis')
-    .select(`*, clips_segmented(*, clips_raw(*))`)
+    .select('*')
     .neq('hook', 'Check this out')
     .order('virality_score', { ascending: false })
     .limit(limit);
 
   if (error) throw error;
-  return data || [];
+  
+  if (!analyses || analyses.length === 0) return [];
+
+  // Fetch related segments
+  const segmentIds = analyses.map((a: any) => a.segment_id);
+  const { data: segments } = await supabase
+    .from('clips_segmented')
+    .select('*')
+    .in('id', segmentIds);
+
+  // Fetch related raw clips
+  const rawClipIds = (segments || []).map((s: any) => s.raw_clip_id);
+  const { data: rawClips } = await supabase
+    .from('clips_raw')
+    .select('*')
+    .in('id', rawClipIds);
+
+  // Merge data back together
+  const segmentsMap = new Map((segments || []).map((s: any) => [s.id, s]));
+  const rawClipsMap = new Map((rawClips || []).map((r: any) => [r.id, r]));
+
+  return analyses.map((a: any) => ({
+    ...a,
+    clips_segmented: segmentsMap.get(a.segment_id),
+    clips_segmented_with_raw: {
+      ...segmentsMap.get(a.segment_id),
+      clips_raw: rawClipsMap.get((segmentsMap.get(a.segment_id) as any)?.raw_clip_id),
+    },
+  }));
 }
