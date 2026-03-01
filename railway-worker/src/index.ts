@@ -55,7 +55,7 @@ async function resolveDownloadUrl(source: string, sourceId: string, pexelsApiKey
     // sourceId may be "pexels_12345283" or "12345283"
     const numericId = sourceId.replace(/^pexels_/, '');
 
-    const response = await fetch(`https://api.pexels.com/videos/${numericId}`, {
+    const response = await fetch(`https://api.pexels.com/videos/videos/${numericId}`, {
       headers: { Authorization: apiKey },
     });
 
