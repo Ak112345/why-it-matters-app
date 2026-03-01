@@ -326,10 +326,24 @@ export async function analyzeClip(options: AnalyzeClipOptions = {}): Promise<str
   // Batch analyze: get unanalyzed segments (or ones with fake hooks)
   console.log(`[analyzeClip] Starting batch analysis, batchSize=${batchSize}`);
   
+  // First, get all segments that have real analyses
+  const { data: realAnalyzed, error: realAnalyzeError } = await supabase
+    .from('analysis')
+    .select('segment_id')
+    .neq('hook', 'Check this out');
+
+  if (realAnalyzeError) {
+    console.error('[analyzeClip] Error fetching real analyses:', realAnalyzeError);
+  }
+
+  const realAnalyzedIds = new Set((realAnalyzed || []).map((a: any) => a.segment_id));
+  console.log(`[analyzeClip] Found ${realAnalyzedIds.size} segments with real analyses`);
+
+  // Now get all segments, excluding those with real analyses
   const { data: allSegments, error: fetchError } = await supabase
     .from('clips_segmented')
     .select('id, status')
-    .order('created_at', { ascending: true })
+    .order('created_at', { ascending: false })  // Most recent first
     .limit(batchSize * 3);
 
   if (fetchError) {
@@ -342,49 +356,23 @@ export async function analyzeClip(options: AnalyzeClipOptions = {}): Promise<str
     return analysisIds;
   }
 
-  console.log(`[analyzeClip] Fetched ${allSegments.length} segments from DB (limit was ${batchSize * 3})`);
+  console.log(`[analyzeClip] Fetched ${allSegments.length} most recent segments from DB (limit was ${batchSize * 3})`);
   console.log(`[analyzeClip] First 3 segment IDs:`, allSegments.slice(0, 3).map((s: any) => s.id));
 
-  // Get already analyzed (with real hooks)
-  const segmentIds_to_check = allSegments.map((s: any) => s.id);
-  console.log(`[analyzeClip] Checking ${segmentIds_to_check.length} segments in analysis table...`);
-  
-  const { data: analyzed, error: analysisError } = await supabase
-    .from('analysis')
-    .select('segment_id, hook')
-    .in('segment_id', segmentIds_to_check);
-
-  if (analysisError) {
-    console.error('[analyzeClip] Analysis query error:', analysisError);
-  }
-
-  console.log(`[analyzeClip] Found ${analyzed?.length ?? 0} existing analyses`);
-  if (analyzed && analyzed.length > 0) {
-    console.log('[analyzeClip] Sample analyses:', analyzed.slice(0, 3).map((a: any) => ({ segment_id: a.segment_id, hook: a.hook?.substring(0, 30) })));
-  }
-
-  // Only skip segments that have REAL analysis (not the "Check this out" fallback)
-  const reallyAnalyzedIds = new Set(
-    (analyzed || [])
-      .filter((a: any) => a.hook && a.hook !== 'Check this out')
-      .map((a: any) => a.segment_id)
-  );
-
-  console.log(`[analyzeClip] Real analyses: ${reallyAnalyzedIds.size}`);
-  
-  const segments = allSegments
-    .filter((s: any) => !reallyAnalyzedIds.has(s.id))
+  // Filter out already analyzed segments
+  const segmentsNeedingAnalysis = allSegments
+    .filter((s: any) => !realAnalyzedIds.has(s.id))
     .slice(0, batchSize);
 
-  console.log(`[analyzeClip] Segments needing analysis: ${segments.length} (after filtering ${allSegments.length} total)`);
-  if (segments.length > 0) {
-    console.log('[analyzeClip] First segment needing analysis:', segments[0]);
+  console.log(`[analyzeClip] Segments needing analysis: ${segmentsNeedingAnalysis.length} (after filtering ${allSegments.length} most recent)`);
+  if (segmentsNeedingAnalysis.length > 0) {
+    console.log('[analyzeClip] First segment needing analysis:', segmentsNeedingAnalysis[0]);
   }
 
   let successCount = 0;
   let failureCount = 0;
 
-  for (const segment of segments) {
+  for (const segment of segmentsNeedingAnalysis) {
     try {
       const id = await analyzeSingleSegment((segment as any).id);
       analysisIds.push(id);
