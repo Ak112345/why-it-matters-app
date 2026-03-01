@@ -31,17 +31,30 @@ async function getDownloadUrl(source: string, sourceId: string): Promise<string 
     const apiKey = process.env.PEXELS_API_KEY;
     if (!apiKey) return null;
 
-    const response = await fetch(`https://api.pexels.com/videos/videos/${numericId}`, {
-      headers: { Authorization: apiKey },
-    });
-    if (!response.ok) return null;
+    try {
+      // Try the correct Pexels API endpoint for video details
+      const response = await fetch(`https://api.pexels.com/videos/${numericId}`, {
+        headers: { Authorization: apiKey },
+      });
+      if (!response.ok) {
+        console.warn(`Pexels API error for ${numericId}: ${response.status}`);
+        return null;
+      }
 
-    const data = await response.json();
-    const hdFile = data.video_files?.find(
-      (f: any) => f.quality === 'hd' && f.file_type === 'video/mp4'
-    ) || data.video_files?.[0];
+      const data = await response.json();
+      const hdFile = data.video_files?.find(
+        (f: any) => f.quality === 'hd' && f.file_type === 'video/mp4'
+      ) || data.video_files?.find(
+        (f: any) => f.file_type === 'video/mp4'
+      ) || data.video_files?.[0];
 
-    return hdFile?.link ?? null;
+      if (hdFile?.link) return hdFile.link;
+      console.warn(`No downloadable video file found for Pexels ID ${numericId}`);
+      return null;
+    } catch (error) {
+      console.error(`Error fetching Pexels video ${numericId}:`, error);
+      return null;
+    }
   }
 
   // Internet Archive: construct direct download URL
