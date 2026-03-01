@@ -77,8 +77,14 @@ export async function produceVideo({
     .in('id', targetAnalysisIds)
     .limit(batchSize);
 
-  if (error) throw new Error(`Failed to fetch analyses: ${error.message}`);
-  if (!analyses || analyses.length === 0) throw new Error('No analyses found for given IDs');
+  if (error) {
+    console.error('[produceVideo] Error fetching analyses by ID:', error);
+    throw new Error(`Failed to fetch analyses: ${error.message}`);
+  }
+  if (!analyses || analyses.length === 0) {
+    console.error('[produceVideo] No analyses found for IDs:', targetAnalysisIds);
+    throw new Error('No analyses found for given IDs');
+  }
 
   console.log(`[produceVideo] Fetched ${analyses.length} analyses, extracting segment IDs...`);
   
@@ -135,6 +141,18 @@ export async function produceVideo({
     const startTime = segment.start_time ?? 0;
     const endTime = segment.end_time ?? 10;
     const outputFilePath = `outputs/${analysis.id}.mp4`;
+    const { data: { publicUrl: segmentPublicUrl } } = supabase.storage
+      .from('segmented_clips')
+      .getPublicUrl(segment.file_path || '');
+    let segmentAccessUrl = segmentPublicUrl;
+    if (segment.file_path) {
+      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+        .from('segmented_clips')
+        .createSignedUrl(segment.file_path, 60 * 60);
+      if (!signedUrlError && signedUrlData?.signedUrl) {
+        segmentAccessUrl = signedUrlData.signedUrl;
+      }
+    }
 
     try {
       console.log(`[produceVideo] Sending job to Railway for analysis ${analysis.id} (${source}/${source_id} ${startTime}s-${endTime}s)`);
@@ -150,16 +168,25 @@ export async function produceVideo({
           // Source info for direct download — no more broken storage URLs
           source,
           sourceId: source_id,
+          source_id,
           startTime,
+          start_time: startTime,
           endTime,
+          end_time: endTime,
           // Pexels API key passed through so worker can resolve download URL
           pexelsApiKey: process.env.PEXELS_API_KEY,
+          pexels_api_key: process.env.PEXELS_API_KEY,
+          segmentUrl: segmentAccessUrl,
+          segment_url: segmentAccessUrl,
           filePath: outputFilePath,
+          file_path: outputFilePath,
           hook: analysis.hook ?? 'Watch this.',
           caption: analysis.caption ?? '',
           explanation: analysis.explanation ?? '',
           addSubtitles,
+          add_subtitles: addSubtitles,
           addHookOverlay,
+          add_hook_overlay: addHookOverlay,
         }),
       });
 
@@ -189,13 +216,17 @@ export async function produceVideo({
 
     } catch (err: any) {
       console.error(`[produceVideo] ✗ Failed for ${analysis.id}:`, err.message);
-      await supabase.from('videos_final').insert({
-        segment_id: segment.id,
-        analysis_id: analysis.id,
-        file_path: '',
-        status: 'error',
-        error_message: err.message,
-      });
+      try {
+        await supabase.from('videos_final').insert({
+          segment_id: segment.id,
+          analysis_id: analysis.id,
+          file_path: '',
+          status: 'error',
+          error_message: err.message,
+        });
+      } catch (dbErr: any) {
+        console.error('[produceVideo] Failed to write error row to videos_final:', dbErr?.message || dbErr);
+      }
     }
   }
 
