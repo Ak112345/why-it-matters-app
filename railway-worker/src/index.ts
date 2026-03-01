@@ -6,6 +6,10 @@ import http from 'http';
 import { v4 as uuidv4 } from 'uuid';
 import { createClient } from '@supabase/supabase-js';
 import ffmpeg from 'fluent-ffmpeg';
+import { path as ffmpegPath } from '@ffmpeg-installer/ffmpeg';
+
+// Set ffmpeg path for Railway/nixpacks
+ffmpeg.setFfmpegPath(ffmpegPath);
 
 const requiredEnv = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'WORKER_SECRET'];
 for (const key of requiredEnv) {
