@@ -26,10 +26,27 @@ export async function POST(request: NextRequest) {
       addHookOverlay,
     });
 
+    // Get failed/error count from videos_final for this batch
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(
+      process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+      process.env.SUPABASE_SERVICE_ROLE_KEY || ""
+    );
+    
+    const { data: errorRows } = await supabase
+      .from('videos_final')
+      .select('status')
+      .eq('status', 'error')
+      .gte('created_at', new Date(Date.now() - 300000).toISOString()); // last 5 min
+
     return NextResponse.json({
       success: true,
-      message: `Produced ${results.length} videos`,
+      message: `Produced ${results.length} videos (${errorRows?.length || 0} failed in last 5min)`,
       data: results,
+      stats: {
+        produced: results.length,
+        recentFailures: errorRows?.length || 0,
+      },
     });
   } catch (error) {
     console.error('Error in produce API:', error);
