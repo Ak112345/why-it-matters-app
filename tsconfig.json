@@ -13,7 +13,7 @@
       "dom",
       "dom.iterable"
     ],
-    "jsx": "react-jsx",
+    "jsx": "preserve",
     "module": "ESNext",
     "skipLibCheck": true,
     "strict": false,

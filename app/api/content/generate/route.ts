@@ -118,22 +118,49 @@ export async function GET() {
     let analysisIds: string[] = [];
     try {
       console.log('[DAILY CONTENT] Step 3: Analyzing segments...');
-      // Extract all segment IDs from the segment results
-      const { data: existingSegments } = await supabase.from('clips_segmented').select('id').limit(500);
-      const allSegmentIds = existingSegments?.map(s => s.id) ?? [];
-      analysisIds = await analyzeClip({ batchSize: 12 });
+      
+      // Check what segments are available
+      const { data: existingSegments, error: segError } = await supabase
+        .from('clips_segmented')
+        .select('id, status')
+        .limit(500);
+      
+      if (segError) {
+        throw new Error(`Failed to fetch segments: ${segError.message}`);
+      }
+      
+      const segmentCount = existingSegments?.length ?? 0;
+      console.log(`[DAILY CONTENT] Found ${segmentCount} total segments in database`);
+      
+      if (segmentCount === 0) {
+        throw new Error('No segments found in database. Run segmentation first.');
+      }
+      
+      // Check existing analyses
+      const { data: existingAnalyses } = await supabase
+        .from('analysis')
+        .select('segment_id, hook')
+        .limit(1000);
+      
+      const fakeAnalysisCount = (existingAnalyses || []).filter(a => a.hook === 'Check this out').length;
+      const realAnalysisCount = (existingAnalyses || []).filter(a => a.hook && a.hook !== 'Check this out').length;
+      
+      console.log(`[DAILY CONTENT] Existing analyses: ${realAnalysisCount} real, ${fakeAnalysisCount} fake`);
+      
+      // Try batch analysis
+      analysisIds = await analyzeClip({ batchSize: 20 });
       
       results.push({
         stage: 'analyze',
         success: true,
         count: analysisIds.length,
-        data: { analysisIds },
+        data: { analysisIds, segmentCount, realAnalysisCount, fakeAnalysisCount },
       });
 
       console.log(`[DAILY CONTENT] ✓ Analyzed ${analysisIds.length} clips`);
 
       if (analysisIds.length === 0) {
-        throw new Error('No segments were analyzed');
+        throw new Error(`No new segments analyzed. Segments: ${segmentCount}, Real analyses: ${realAnalysisCount}, Fake analyses: ${fakeAnalysisCount}`);
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';

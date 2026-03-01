@@ -133,6 +133,7 @@ Return JSON with these keys:
 - evergreen_or_trending: "Evergreen" | "Trending"`;
 
   try {
+    console.log(`[generateAnalysis] Calling OpenAI for segment ${segmentId}...`);
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
@@ -146,6 +147,7 @@ Return JSON with these keys:
     const response = completion.choices[0].message.content;
     if (!response) throw new Error('No response from OpenAI');
 
+    console.log(`[generateAnalysis] Received response, parsing JSON...`);
     const analysis = JSON.parse(response);
 
     // Reject fallback/generic responses
@@ -177,7 +179,14 @@ Return JSON with these keys:
       },
     };
   } catch (error) {
-    console.error(`Error generating analysis for segment ${segmentId}:`, error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error(`[generateAnalysis] Error for segment ${segmentId}:`, errorMsg);
+    
+    // Check if this is an auth error
+    if (errorMsg.includes('401') || errorMsg.includes('Unauthorized') || errorMsg.includes('API key')) {
+      console.error('[generateAnalysis] ⚠ LIKELY AUTH ISSUE - Check OPENAI_API_KEY env var');
+    }
+    
     throw error; // Don't swallow — let caller handle and skip
   }
 }
@@ -187,14 +196,19 @@ Return JSON with these keys:
  */
 async function analyzeSingleSegment(segmentId: string): Promise<string> {
   // Check if already analyzed with a real hook (not the fallback)
-  const { data: existingAnalysis } = await supabase
+  const { data: existingAnalysis, error: checkError } = await supabase
     .from('analysis')
     .select('id, hook')
     .eq('segment_id', segmentId)
     .single();
 
+  if (checkError && checkError.code !== 'PGRST116') {
+    // PGRST116 = no rows (not found), any other error is real
+    throw new Error(`Failed to check existing analysis: ${checkError.message}`);
+  }
+
   if (existingAnalysis && existingAnalysis.hook !== 'Check this out') {
-    console.log(`Segment ${segmentId} already analyzed, skipping`);
+    console.log(`Segment ${segmentId} already has real analysis, skipping`);
     return existingAnalysis.id;
   }
 
@@ -211,8 +225,12 @@ async function analyzeSingleSegment(segmentId: string): Promise<string> {
     .eq('id', segmentId)
     .single();
 
-  if (fetchError || !segment) {
-    throw new Error(`Segment not found: ${segmentId}`);
+  if (fetchError) {
+    throw new Error(`Segment not found: ${segmentId} (${fetchError.message})`);
+  }
+
+  if (!segment) {
+    throw new Error(`Segment ${segmentId} returned no data`);
   }
 
   const rawClip = (segment as any).clips_raw;
@@ -220,15 +238,22 @@ async function analyzeSingleSegment(segmentId: string): Promise<string> {
     throw new Error(`No raw clip linked to segment ${segmentId}`);
   }
 
-  console.log(`Analyzing segment ${segmentId} (${rawClip.source}/${rawClip.source_id})...`);
+  console.log(`[analyzeSingleSegment] Analyzing ${segmentId} (${rawClip.source}/${rawClip.source_id})...`);
 
-  const analysis = await generateAnalysis(
-    segmentId,
-    rawClip.source,
-    rawClip.source_id,
-    (segment as any).start_time ?? 0,
-    (segment as any).end_time ?? 10,
-  );
+  let analysis: AnalysisResult;
+  try {
+    analysis = await generateAnalysis(
+      segmentId,
+      rawClip.source,
+      rawClip.source_id,
+      (segment as any).start_time ?? 0,
+      (segment as any).end_time ?? 10,
+    );
+  } catch (analysisError) {
+    const msg = analysisError instanceof Error ? analysisError.message : String(analysisError);
+    console.error(`[analyzeSingleSegment] Analysis generation failed for segment ${segmentId}:`, msg);
+    throw new Error(`Analysis generation failed: ${msg}`);
+  }
 
   // Insert into database
   const { data: insertedAnalysis, error: insertError } = await supabase
@@ -294,7 +319,7 @@ export async function analyzeClip(options: AnalyzeClipOptions = {}): Promise<str
   // Batch analyze: get unanalyzed segments (or ones with fake hooks)
   const { data: allSegments, error: fetchError } = await supabase
     .from('clips_segmented')
-    .select('id')
+    .select('id, status')
     .order('created_at', { ascending: true })
     .limit(batchSize * 3);
 
@@ -304,11 +329,17 @@ export async function analyzeClip(options: AnalyzeClipOptions = {}): Promise<str
     return analysisIds;
   }
 
+  console.log(`[analyzeClip] Found ${allSegments.length} segments, querying existing analyses...`);
+
   // Get already analyzed (with real hooks)
-  const { data: analyzed } = await supabase
+  const { data: analyzed, error: analysisError } = await supabase
     .from('analysis')
     .select('segment_id, hook')
     .in('segment_id', allSegments.map((s: any) => s.id));
+
+  if (analysisError) {
+    console.error('[analyzeClip] Error fetching analyses:', analysisError);
+  }
 
   // Only skip segments that have REAL analysis (not the "Check this out" fallback)
   const reallyAnalyzedIds = new Set(
@@ -321,18 +352,23 @@ export async function analyzeClip(options: AnalyzeClipOptions = {}): Promise<str
     .filter((s: any) => !reallyAnalyzedIds.has(s.id))
     .slice(0, batchSize);
 
-  console.log(`Found ${segments.length} segments needing analysis`);
+  console.log(`[analyzeClip] Found ${segments.length} segments needing analysis (real: ${reallyAnalyzedIds.size}, total: ${allSegments.length})`);
+
+  let successCount = 0;
+  let failureCount = 0;
 
   for (const segment of segments) {
     try {
       const id = await analyzeSingleSegment((segment as any).id);
       analysisIds.push(id);
+      successCount++;
     } catch (error) {
-      console.error(`Failed to analyze segment ${(segment as any).id}:`, error);
+      failureCount++;
+      console.error(`Failed to analyze segment ${(segment as any).id}:`, error instanceof Error ? error.message : error);
     }
   }
 
-  console.log(`Analysis complete: ${analysisIds.length} segments analyzed`);
+  console.log(`[analyzeClip] Analysis complete: ${successCount} succeeded, ${failureCount} failed`);
   return analysisIds;
 }
 
