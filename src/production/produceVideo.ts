@@ -35,7 +35,7 @@ async function resolveLegacyDownloadUrl(
 
     try {
       const numericId = sourceId.replace(/^pexels_/, '');
-      const response = await fetch(`https://api.pexels.com/videos/${numericId}`, {
+      const response = await fetch(`https://api.pexels.com/videos/videos/${numericId}`, {
         headers: { Authorization: apiKey },
       });
       if (!response.ok) return fallbackUrl;
