@@ -80,7 +80,17 @@ export async function produceVideo({
   if (error) throw new Error(`Failed to fetch analyses: ${error.message}`);
   if (!analyses || analyses.length === 0) throw new Error('No analyses found for given IDs');
 
+  console.log(`[produceVideo] Fetched ${analyses.length} analyses, extracting segment IDs...`);
+  
   const segmentIds = analyses.map((analysis: any) => analysis.segment_id).filter(Boolean);
+  console.log(`[produceVideo] Found ${segmentIds.length} segment IDs from ${analyses.length} analyses`);
+  
+  if (segmentIds.length === 0) {
+    console.error('[produceVideo] No segment IDs found in analyses!');
+    console.error('[produceVideo] Sample analysis:', analyses[0]);
+    throw new Error('No segment IDs found in analyses');
+  }
+
   const { data: segments, error: segmentsError } = await supabase
     .from('clips_segmented')
     .select('id, file_path, start_time, end_time, raw_clip_id')
@@ -88,10 +98,14 @@ export async function produceVideo({
 
   if (segmentsError) throw new Error(`Failed to fetch segments: ${segmentsError.message}`);
 
+  console.log(`[produceVideo] Fetched ${segments?.length || 0} segments for ${segmentIds.length} segment IDs`);
+
   const segmentsById = new Map((segments || []).map((segment: any) => [segment.id, segment]));
   const rawClipIds = Array.from(
     new Set((segments || []).map((segment: any) => segment.raw_clip_id).filter(Boolean))
   );
+
+  console.log(`[produceVideo] Found ${rawClipIds.length} raw clip IDs from segments`);
 
   const { data: rawClips, error: rawClipsError } = await supabase
     .from('clips_raw')
@@ -100,15 +114,19 @@ export async function produceVideo({
 
   if (rawClipsError) throw new Error(`Failed to fetch raw clips: ${rawClipsError.message}`);
 
+  console.log(`[produceVideo] Fetched ${rawClips?.length || 0} raw clips for ${rawClipIds.length} raw clip IDs`);
+
   const rawClipsById = new Map((rawClips || []).map((rawClip: any) => [rawClip.id, rawClip]));
 
   const results: ProducedVideo[] = [];
+  let skippedCount = 0;
 
   for (const analysis of analyses) {
     const segment = segmentsById.get((analysis as any).segment_id) as any;
     const rawClip = segment ? rawClipsById.get(segment.raw_clip_id) as any : null;
 
     if (!segment || !rawClip) {
+      skippedCount++;
       console.warn(`[produceVideo] Missing segment or raw clip for analysis ${analysis.id}, skipping`);
       continue;
     }
@@ -181,5 +199,6 @@ export async function produceVideo({
     }
   }
 
+  console.log(`[produceVideo] Completed: ${results.length} produced, ${skippedCount} skipped, ${analyses.length} total`);
   return results;
 }
