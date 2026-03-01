@@ -18,7 +18,9 @@
     "migrate": "ts-node scripts/migrations/migrate.ts",
     "migrate:bash": "bash scripts/migrations/run.sh",
     "remediation:start": "ts-node scripts/remediation-service.ts",
-    "remediation:once": "ts-node scripts/remediation-service.ts once"
+    "remediation:once": "ts-node scripts/remediation-service.ts once",
+    "verify:segments": "ts-node --esm scripts/list-segment-ids.ts",
+    "diagnose:pipeline": "ts-node --esm scripts/diagnose-pipeline.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

@@ -2,27 +2,64 @@
 
 /**
  * Diagnose pipeline status
- * Run with: npx tsx scripts/diagnose-pipeline.ts
+ * Run with: pnpm diagnose:pipeline
+ * Environment variables:
+ *   DIAGNOSE_QUERY_LIMIT - max records per query (default: 300)
+ *   DIAGNOSE_TIMEOUT_MS - query timeout in milliseconds (default: 20000)
  */
 
-import { supabase } from '../src/utils/supabaseClient.js';
 import * as dotenv from 'dotenv';
+import { createClient } from '@supabase/supabase-js';
 
 dotenv.config({ path: '.env.local' });
 
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY =
+  process.env.NEXT_SUPABASE_SERVICE_ROLE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  throw new Error('Missing SUPABASE_URL or service role key environment variable.');
+}
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+const DIAG_LIMIT = Number(process.env.DIAGNOSE_QUERY_LIMIT ?? 300);
+const DIAG_TIMEOUT_MS = Number(process.env.DIAGNOSE_TIMEOUT_MS ?? 20000);
+
+async function withTimeout(task: any) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DIAG_TIMEOUT_MS);
+
+  try {
+    return await task(controller.signal);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function formatQueryError(error: { message: string; name?: string }) {
+  if (error?.name === 'AbortError') {
+    return `Query timed out after ${DIAG_TIMEOUT_MS}ms. Increase DIAGNOSE_TIMEOUT_MS or lower DIAGNOSE_QUERY_LIMIT.`;
+  }
+  return error.message;
+}
+
 async function diagnose() {
   console.log('🔍 Diagnosing Pipeline Status...\n');
+  console.log(`Using query limit=${DIAG_LIMIT}, timeout=${DIAG_TIMEOUT_MS}ms\n`);
 
   try {
     // Check raw clips
     console.log('📦 Checking raw clips...');
-    const { data: rawClips, error: rawError } = await supabase
-      .from('clips_raw')
-      .select('id, status, source, source_id')
-      .limit(1000);
-
+    const { data: rawClips, error: rawError } = await withTimeout((signal) =>
+      supabase
+        .from('clips_raw')
+        .select('id, status, source, source_id')
+        .limit(DIAG_LIMIT)
+        .abortSignal(signal)
+    );
     if (rawError) {
-      console.error('  ❌ Error fetching raw clips:', rawError.message);
+      console.error('  ❌ Error fetching raw clips:', formatQueryError(rawError));
     } else {
       const rawByStatus = rawClips?.reduce((acc: any, clip: any) => {
         acc[clip.status] = (acc[clip.status] || 0) + 1;
@@ -36,13 +73,16 @@ async function diagnose() {
 
     // Check segments
     console.log('\n📐 Checking segments...');
-    const { data: segments, error: segError } = await supabase
-      .from('clips_segmented')
-      .select('id, status, raw_clip_id, start_time, end_time')
-      .limit(1000);
+    const { data: segments, error: segError } = await withTimeout((signal) =>
+      supabase
+        .from('clips_segmented')
+        .select('id, status, raw_clip_id, start_time, end_time')
+        .limit(DIAG_LIMIT)
+        .abortSignal(signal)
+    );
 
     if (segError) {
-      console.error('  ❌ Error fetching segments:', segError.message);
+      console.error('  ❌ Error fetching segments:', formatQueryError(segError));
     } else {
       const segByStatus = segments?.reduce((acc: any, seg: any) => {
         acc[seg.status] = (acc[seg.status] || 0) + 1;
@@ -63,13 +103,16 @@ async function diagnose() {
 
     // Check segments WITH relationships
     console.log('\n🔗 Checking segment→raw relationships...');
-    const { data: segmentsWithRaw, error: relError } = await supabase
-      .from('clips_segmented')
-      .select('id, clips_raw(id, source, source_id)')
-      .limit(10);
+    const { data: segmentsWithRaw, error: relError } = await withTimeout((signal) =>
+      supabase
+        .from('clips_segmented')
+        .select('id, clips_raw(id, source, source_id)')
+        .limit(10)
+        .abortSignal(signal)
+    );
 
     if (relError) {
-      console.error('  ❌ Error fetching relationships:', relError.message);
+      console.error('  ❌ Error fetching relationships:', formatQueryError(relError));
     } else {
       console.log(`  Query succeeded, found ${segmentsWithRaw?.length ?? 0} segments`);
       if (segmentsWithRaw && segmentsWithRaw.length > 0) {
@@ -85,13 +128,16 @@ async function diagnose() {
 
     // Check analyses
     console.log('\n🧠 Checking analyses...');
-    const { data: analyses, error: anaError } = await supabase
-      .from('analysis')
-      .select('id, segment_id, hook, virality_score')
-      .limit(1000);
+    const { data: analyses, error: anaError } = await withTimeout((signal) =>
+      supabase
+        .from('analysis')
+        .select('id, segment_id, hook, virality_score')
+        .limit(DIAG_LIMIT)
+        .abortSignal(signal)
+    );
 
     if (anaError) {
-      console.error('  ❌ Error fetching analyses:', anaError.message);
+      console.error('  ❌ Error fetching analyses:', formatQueryError(anaError));
     } else {
       const fakeCount = analyses?.filter(a => a.hook === 'Check this out').length ?? 0;
       const realCount = analyses?.filter(a => a.hook && a.hook !== 'Check this out').length ?? 0;
@@ -107,13 +153,16 @@ async function diagnose() {
 
     // Check videos
     console.log('\n🎬 Checking videos...');
-    const { data: videos, error: vidError } = await supabase
-      .from('videos_final')
-      .select('id, status')
-      .limit(100);
+    const { data: videos, error: vidError } = await withTimeout((signal) =>
+      supabase
+        .from('videos_final')
+        .select('id, status')
+        .limit(Math.min(DIAG_LIMIT, 200))
+        .abortSignal(signal)
+    );
 
     if (vidError) {
-      console.error('  ❌ Error fetching videos:', vidError.message);
+      console.error('  ❌ Error fetching videos:', formatQueryError(vidError));
     } else {
       const vidByStatus = videos?.reduce((acc: any, vid: any) => {
         acc[vid.status] = (acc[vid.status] || 0) + 1;

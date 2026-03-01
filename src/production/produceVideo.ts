@@ -1,7 +1,8 @@
 import { supabase } from '../utils/supabaseClient';
 
 interface ProduceVideoOptions {
-  analysisIds: string[];
+  analysisIds?: string[];
+  analysisId?: string;
   batchSize?: number;
   addSubtitles?: boolean;
   addHookOverlay?: boolean;
@@ -14,6 +15,7 @@ interface ProducedVideo {
 }
 
 export async function produceVideo({
+  analysisId,
   analysisIds,
   batchSize = 4,
   addSubtitles = true,
@@ -25,27 +27,75 @@ export async function produceVideo({
   if (!workerUrl) throw new Error('RAILWAY_WORKER_URL env var is not set');
   if (!workerSecret) throw new Error('WORKER_SECRET env var is not set');
 
-  // Join all the way up to raw clip to get source info
+  let targetAnalysisIds: string[] = [];
+  if (analysisId) {
+    targetAnalysisIds = [analysisId];
+  } else if (analysisIds && analysisIds.length > 0) {
+    targetAnalysisIds = analysisIds.slice(0, batchSize);
+  } else {
+    const { data: recentAnalyses, error: recentError } = await supabase
+      .from('analysis')
+      .select('id')
+      .neq('hook', 'Check this out')
+      .order('analyzed_at', { ascending: false })
+      .limit(batchSize * 3);
+
+    if (recentError) throw new Error(`Failed to fetch recent analyses: ${recentError.message}`);
+
+    const candidateIds = (recentAnalyses || []).map((row: any) => row.id);
+    if (candidateIds.length === 0) throw new Error('No analyses available to produce videos');
+
+    const { data: existingVideos, error: videoCheckError } = await supabase
+      .from('videos_final')
+      .select('analysis_id')
+      .in('analysis_id', candidateIds);
+
+    if (videoCheckError) throw new Error(`Failed to check existing videos: ${videoCheckError.message}`);
+
+    const alreadyProduced = new Set((existingVideos || []).map((row: any) => row.analysis_id));
+    targetAnalysisIds = candidateIds.filter((id) => !alreadyProduced.has(id)).slice(0, batchSize);
+
+    if (targetAnalysisIds.length === 0) {
+      throw new Error('No unproduced analyses found to process');
+    }
+  }
+
   const { data: analyses, error } = await supabase
     .from('analysis')
-    .select(`
-      id, segment_id, hook, caption, explanation,
-      clips_segmented (
-        id, file_path, start_time, end_time,
-        clips_raw ( id, source, source_id )
-      )
-    `)
-    .in('id', analysisIds)
+    .select('id, segment_id, hook, caption, explanation')
+    .in('id', targetAnalysisIds)
     .limit(batchSize);
 
   if (error) throw new Error(`Failed to fetch analyses: ${error.message}`);
   if (!analyses || analyses.length === 0) throw new Error('No analyses found for given IDs');
 
+  const segmentIds = analyses.map((analysis: any) => analysis.segment_id).filter(Boolean);
+  const { data: segments, error: segmentsError } = await supabase
+    .from('clips_segmented')
+    .select('id, file_path, start_time, end_time, raw_clip_id')
+    .in('id', segmentIds);
+
+  if (segmentsError) throw new Error(`Failed to fetch segments: ${segmentsError.message}`);
+
+  const segmentsById = new Map((segments || []).map((segment: any) => [segment.id, segment]));
+  const rawClipIds = Array.from(
+    new Set((segments || []).map((segment: any) => segment.raw_clip_id).filter(Boolean))
+  );
+
+  const { data: rawClips, error: rawClipsError } = await supabase
+    .from('clips_raw')
+    .select('id, source, source_id')
+    .in('id', rawClipIds);
+
+  if (rawClipsError) throw new Error(`Failed to fetch raw clips: ${rawClipsError.message}`);
+
+  const rawClipsById = new Map((rawClips || []).map((rawClip: any) => [rawClip.id, rawClip]));
+
   const results: ProducedVideo[] = [];
 
   for (const analysis of analyses) {
-    const segment = analysis.clips_segmented as any;
-    const rawClip = segment?.clips_raw as any;
+    const segment = segmentsById.get((analysis as any).segment_id) as any;
+    const rawClip = segment ? rawClipsById.get(segment.raw_clip_id) as any : null;
 
     if (!segment || !rawClip) {
       console.warn(`[produceVideo] Missing segment or raw clip for analysis ${analysis.id}, skipping`);

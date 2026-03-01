@@ -160,7 +160,23 @@ export async function GET() {
       console.log(`[DAILY CONTENT] ✓ Analyzed ${analysisIds.length} clips`);
 
       if (analysisIds.length === 0) {
-        throw new Error(`No new segments analyzed. Segments: ${segmentCount}, Real analyses: ${realAnalysisCount}, Fake analyses: ${fakeAnalysisCount}`);
+        if (realAnalysisCount > 0) {
+          console.log('[DAILY CONTENT] No new segments analyzed; proceeding with existing real analyses for production');
+          results[results.length - 1] = {
+            stage: 'analyze',
+            success: true,
+            count: 0,
+            data: {
+              analysisIds,
+              segmentCount,
+              realAnalysisCount,
+              fakeAnalysisCount,
+              mode: 'reuse-existing-real-analyses',
+            },
+          };
+        } else {
+          throw new Error(`No new segments analyzed and no existing real analyses available. Segments: ${segmentCount}, Real analyses: ${realAnalysisCount}, Fake analyses: ${fakeAnalysisCount}`);
+        }
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
