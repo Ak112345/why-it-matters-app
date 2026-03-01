@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { analyzeClip } from '../../../src/analysis/analyzeClip';
+import { supabase } from '../../../src/utils/supabaseClient';
 
 export async function POST(request: NextRequest) {
   try {
@@ -52,6 +53,24 @@ export async function GET(request: NextRequest) {
 
     console.log(`[GET /api/analyze] Starting batch analysis with batchSize=${batchSize}`);
 
+    // Get a sample of segments first to diagnose
+    const { data: sampleSegments } = await supabase
+      .from('clips_segmented')
+      .select('id')
+      .limit(10);
+      
+    console.log(`[GET /api/analyze] Found ${sampleSegments?.length ?? 0} sample segments in DB`);
+    
+    // Check which have analysis
+    if (sampleSegments && sampleSegments.length > 0) {
+      const { data: existingAnalyses } = await supabase
+        .from('analysis')
+        .select('segment_id, hook')
+        .in('segment_id', sampleSegments.map(s => s.id));
+      
+      console.log(`[GET /api/analyze] ${existingAnalyses?.length ?? 0} of sample have analysis`);
+    }
+
     const analysisIds = await analyzeClip({ batchSize });
 
     return NextResponse.json({
@@ -60,6 +79,9 @@ export async function GET(request: NextRequest) {
       data: {
         analysisIds,
         count: analysisIds.length,
+        diagnostic: {
+          sampleSegmentsFound: sampleSegments?.length ?? 0,
+        },
       },
       timestamp: new Date().toISOString(),
     });
