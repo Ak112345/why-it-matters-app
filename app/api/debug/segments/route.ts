@@ -7,34 +7,44 @@ import { supabase } from '../../../../src/utils/supabaseClient';
  */
 export async function GET() {
   try {
-    // Get segments with their raw clip relationships
+    // Get segments - no relationship join
     const { data: segments, error } = await supabase
       .from('clips_segmented')
-      .select(`
-        id,
-        status,
-        raw_clip_id,
-        start_time,
-        end_time,
-        clips_raw (
-          id,
-          source,
-          source_id,
-          status
-        )
-      `)
+      .select('id, status, raw_clip_id, start_time, end_time')
       .limit(20);
 
     if (error) {
       throw new Error(`Query failed: ${error.message}`);
     }
 
+    // Fetch raw clips separately for segments that have raw_clip_id
+    const rawClipIds = (segments || [])
+      .map((s: any) => s.raw_clip_id)
+      .filter(Boolean);
+
+    const rawClipsMap = new Map();
+    if (rawClipIds.length > 0) {
+      const { data: rawClips } = await supabase
+        .from('clips_raw')
+        .select('id, source, source_id, status')
+        .in('id', rawClipIds);
+
+      (rawClips || []).forEach((rc: any) => {
+        rawClipsMap.set(rc.id, rc);
+      });
+    }
+
+    const enrichedSegments = (segments || []).map((s: any) => ({
+      ...s,
+      clips_raw: s.raw_clip_id ? rawClipsMap.get(s.raw_clip_id) : null,
+    }));
+
     // Check how many have raw clip links
-    const withRawClip = segments?.filter(s => (s as any).clips_raw).length ?? 0;
-    const withoutRawClip = segments?.filter(s => !(s as any).clips_raw).length ?? 0;
+    const withRawClip = enrichedSegments.filter(s => s.clips_raw).length;
+    const withoutRawClip = enrichedSegments.filter(s => !s.clips_raw).length;
 
     // Check existing analyses
-    const segmentIds = segments?.map(s => s.id) ?? [];
+    const segmentIds = enrichedSegments.map(s => s.id);
     const { data: analyses } = await supabase
       .from('analysis')
       .select('segment_id, hook')
@@ -46,13 +56,13 @@ export async function GET() {
       success: true,
       timestamp: new Date().toISOString(),
       summary: {
-        totalSegments: segments?.length ?? 0,
+        totalSegments: enrichedSegments.length,
         withRawClip,
         withoutRawClip,
         alreadyAnalyzed: analyzedCount,
-        needingAnalysis: (segments?.length ?? 0) - analyzedCount,
+        needingAnalysis: enrichedSegments.length - analyzedCount,
       },
-      segments: segments?.slice(0, 5).map((s: any) => ({
+      segments: enrichedSegments.slice(0, 5).map((s: any) => ({
         id: s.id,
         status: s.status,
         raw_clip_id: s.raw_clip_id,

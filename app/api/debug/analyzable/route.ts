@@ -36,20 +36,33 @@ export async function GET() {
 
     const needingAnalysis = allSegments.filter((s: any) => !reallyAnalyzedIds.has(s.id));
 
-    // For segments that need analysis, check if they have raw clip links
+    // For segments that need analysis, fetch their metadata and raw clips separately
     const sampleIds = needingAnalysis.slice(0, 5).map((s: any) => s.id);
-    const { data: samplesWithRaw } = await supabase
+    const { data: samples } = await supabase
       .from('clips_segmented')
-      .select(`
-        id,
-        raw_clip_id,
-        clips_raw (
-          id,
-          source,
-          source_id
-        )
-      `)
+      .select('id, raw_clip_id')
       .in('id', sampleIds);
+
+    const rawClipIds = (samples || [])
+      .map((s: any) => s.raw_clip_id)
+      .filter(Boolean);
+
+    const rawClipsMap = new Map();
+    if (rawClipIds.length > 0) {
+      const { data: rawClips } = await supabase
+        .from('clips_raw')
+        .select('id, source, source_id')
+        .in('id', rawClipIds);
+
+      (rawClips || []).forEach((rc: any) => {
+        rawClipsMap.set(rc.id, rc);
+      });
+    }
+
+    const samplesWithRaw = (samples || []).map((s: any) => ({
+      ...s,
+      clips_raw: s.raw_clip_id ? rawClipsMap.get(s.raw_clip_id) : null,
+    }));
 
     return NextResponse.json({
       success: true,
@@ -59,7 +72,7 @@ export async function GET() {
         alreadyAnalyzed: allSegments.length - needingAnalysis.length,
         needingAnalysis: needingAnalysis.length,
       },
-      sampleSegmentsNeedingAnalysis: samplesWithRaw?.map((s: any) => ({
+      sampleSegmentsNeedingAnalysis: samplesWithRaw.map((s: any) => ({
         id: s.id,
         raw_clip_id: s.raw_clip_id,
         has_raw_data: !!s.clips_raw,
