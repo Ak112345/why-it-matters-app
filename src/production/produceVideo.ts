@@ -34,36 +34,56 @@ export async function produceVideo({
     targetAnalysisIds = analysisIds.slice(0, batchSize);
   } else {
     // Try to get recent real analyses (not "Check this out" placeholders)
+    console.log('[produceVideo] Fetching recent analyses...');
     let { data: recentAnalyses, error: recentError } = await supabase
       .from('analysis')
       .select('id, hook')
       .order('analyzed_at', { ascending: false })
       .limit(batchSize * 5);
 
-    if (recentError) throw new Error(`Failed to fetch analyses: ${recentError.message}`);
+    if (recentError) {
+      console.error('[produceVideo] Analysis fetch error:', recentError);
+      throw new Error(`Failed to fetch analyses: ${recentError.message}`);
+    }
+
+    console.log(`[produceVideo] Fetched ${recentAnalyses?.length || 0} analyses`);
 
     // Filter to real analyses (not "Check this out" and not null)
     const realAnalyses = (recentAnalyses || [])
       .filter((row: any) => row.hook && row.hook !== 'Check this out');
     
     let candidateIds = realAnalyses.map((row: any) => row.id);
+    console.log(`[produceVideo] Found ${candidateIds.length} real analyses out of ${recentAnalyses?.length || 0}`);
 
     // Fallback: if no real analyses, use all analyses
     if (candidateIds.length === 0) {
       candidateIds = (recentAnalyses || []).map((row: any) => row.id);
+      console.log(`[produceVideo] Using all ${candidateIds.length} analyses as fallback`);
     }
 
     if (candidateIds.length === 0) throw new Error('No analyses available to produce videos');
 
-    const { data: existingVideos, error: videoCheckError } = await supabase
-      .from('videos_final')
-      .select('analysis_id')
-      .in('analysis_id', candidateIds);
+    // Try to filter by already produced, but don't fail if this query fails
+    let alreadyProduced = new Set<string>();
+    try {
+      console.log(`[produceVideo] Checking ${candidateIds.length} analyses against videos_final...`);
+      const { data: existingVideos, error: videoCheckError } = await supabase
+        .from('videos_final')
+        .select('analysis_id')
+        .in('analysis_id', candidateIds);
 
-    if (videoCheckError) throw new Error(`Failed to check existing videos: ${videoCheckError.message}`);
+      if (!videoCheckError) {
+        alreadyProduced = new Set((existingVideos || []).map((row: any) => row.analysis_id));
+        console.log(`[produceVideo] ${alreadyProduced.size} analyses already have videos`);
+      } else {
+        console.warn('[produceVideo] Failed to check existing videos, proceeding without filter:', videoCheckError.message);
+      }
+    } catch (err) {
+      console.warn('[produceVideo] Exception checking videos, proceeding without filter:', err);
+    }
 
-    const alreadyProduced = new Set((existingVideos || []).map((row: any) => row.analysis_id));
     targetAnalysisIds = candidateIds.filter((id) => !alreadyProduced.has(id)).slice(0, batchSize);
+    console.log(`[produceVideo] Selected ${targetAnalysisIds.length} unproduced analyses to process`);
 
     if (targetAnalysisIds.length === 0) {
       throw new Error('No unproduced analyses found to process');
