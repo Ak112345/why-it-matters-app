@@ -280,19 +280,20 @@ async function analyzeSingleSegment(segmentId: string): Promise<string> {
   if (insertError) throw new Error(`Failed to insert analysis: ${insertError.message}`);
 
   // Run through content director approval
-  try {
-    const approval = await directorApproveContent(segmentId, analysis);
-    await supabase
-      .from('analysis')
-      .update({
-        approval_status: approval.approval,
-        content_status: approval.status,
-        quality_score: approval.validation.score,
-      } as any)
-      .eq('id', (insertedAnalysis as any).id);
-  } catch (err) {
-    console.error('Approval workflow failed:', err);
-  }
+  // TEMPORARILY DISABLED - Checking if this is causing timeout
+  // try {
+  //   const approval = await directorApproveContent(segmentId, analysis);
+  //   await supabase
+  //     .from('analysis')
+  //     .update({
+  //       approval_status: approval.approval,
+  //       content_status: approval.status,
+  //       quality_score: approval.validation.score,
+  //     } as any)
+  //     .eq('id', (insertedAnalysis as any).id);
+  // } catch (err) {
+  //   console.error('Approval workflow failed:', err);
+  // }
 
   console.log(`✓ Analyzed segment ${segmentId} — hook: "${analysis.hook}" (score: ${analysis.viralityScore})`);
   return (insertedAnalysis as any).id;
