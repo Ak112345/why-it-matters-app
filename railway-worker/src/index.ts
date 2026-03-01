@@ -1,4 +1,3 @@
-// Force redeploy - Railway worker
 import express, { Request, Response, NextFunction } from 'express';
 import fs from 'fs';
 import path from 'path';
@@ -8,18 +7,14 @@ import { v4 as uuidv4 } from 'uuid';
 import { createClient } from '@supabase/supabase-js';
 import ffmpeg from 'fluent-ffmpeg';
 
-// Set ffmpeg path - try ffmpeg-static first, fallback to system
+// Set ffmpeg path - try installer package, fallback to system
 try {
-  const ffmpegStatic = require('ffmpeg-static');
-  ffmpeg.setFfmpegPath(ffmpegStatic);
+  const { path: ffmpegPath } = require('@ffmpeg-installer/ffmpeg');
+  ffmpeg.setFfmpegPath(ffmpegPath);
+  console.log('[INIT] Using ffmpeg-installer');
 } catch {
-  try {
-    const { path: ffmpegPath } = require('@ffmpeg-installer/ffmpeg');
-    ffmpeg.setFfmpegPath(ffmpegPath);
-  } catch {
-    // Fallback to system ffmpeg
-    console.log('[INIT] Using system ffmpeg');
-  }
+  // Fallback to system ffmpeg (should be in /usr/local/bin/ or PATH)
+  console.log('[INIT] Using system ffmpeg');
 }
 
 const requiredEnv = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'WORKER_SECRET'];
