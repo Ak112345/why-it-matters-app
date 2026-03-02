@@ -27,6 +27,8 @@ interface ContentDashboardData {
 export function ContentManagementPanel() {
   const [dashboardData, setDashboardData] = useState<ContentDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeBriefCard, setActiveBriefCard] = useState<string | null>(null);
+  const [activeAnalyticsCard, setActiveAnalyticsCard] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchDashboard = async () => {
@@ -61,6 +63,36 @@ export function ContentManagementPanel() {
   const brief = dashboardData?.directorBrief;
   const stats = dashboardData?.approvalStats;
 
+  const selectedInsight = (() => {
+    if (activeBriefCard === 'pending') {
+      return 'QA queue is selected. Review pending items first to keep publish cadence on schedule.';
+    }
+    if (activeBriefCard === 'critical') {
+      return 'Critical issues are selected. Prioritize items below quality threshold before publishing.';
+    }
+    if (activeBriefCard === 'ready') {
+      return 'Ready-for-production items are selected. These can move directly into queueing.';
+    }
+    if (activeBriefCard === 'quota') {
+      return 'Weekly quota is selected. Use this to gauge whether additional content production is needed.';
+    }
+
+    if (activeAnalyticsCard === 'totalVideos') {
+      return 'Total videos posted this week is selected for quick volume tracking.';
+    }
+    if (activeAnalyticsCard === 'engagement') {
+      return 'Engagement rate is selected. Compare this against your virality threshold.';
+    }
+    if (activeAnalyticsCard === 'bestTime') {
+      return 'Best posting time is selected. Schedule new queue entries around this window.';
+    }
+    if (activeAnalyticsCard === 'viralThreshold') {
+      return 'Virality threshold is selected. Clips above this rate should be repurposed across platforms.';
+    }
+
+    return null;
+  })();
+
   return (
     <>
       {/* Director&apos;s Brief */}
@@ -73,27 +105,56 @@ export function ContentManagementPanel() {
             </div>
           </div>
           <div className="brief-grid">
-            <div className="brief-card status-pending">
+            <button
+              type="button"
+              className={`brief-card status-pending ${activeBriefCard === 'pending' ? 'is-active' : ''}`}
+              onClick={() => {
+                setActiveBriefCard('pending');
+                setActiveAnalyticsCard(null);
+              }}
+            >
               <span className="label">QA Pending</span>
               <strong className="number">{brief?.totalPending || 0}</strong>
               <span className="detail">Awaiting review</span>
-            </div>
-            <div className="brief-card status-critical">
+            </button>
+            <button
+              type="button"
+              className={`brief-card status-critical ${activeBriefCard === 'critical' ? 'is-active' : ''}`}
+              onClick={() => {
+                setActiveBriefCard('critical');
+                setActiveAnalyticsCard(null);
+              }}
+            >
               <span className="label">Critical Issues</span>
               <strong className="number">{brief?.criticalIssues || 0}</strong>
               <span className="detail">Below 50% quality</span>
-            </div>
-            <div className="brief-card status-ready">
+            </button>
+            <button
+              type="button"
+              className={`brief-card status-ready ${activeBriefCard === 'ready' ? 'is-active' : ''}`}
+              onClick={() => {
+                setActiveBriefCard('ready');
+                setActiveAnalyticsCard(null);
+              }}
+            >
               <span className="label">Ready for Production</span>
               <strong className="number">{brief?.readyForProduction || 0}</strong>
               <span className="detail">Approved & waiting</span>
-            </div>
-            <div className="brief-card status-quota">
+            </button>
+            <button
+              type="button"
+              className={`brief-card status-quota ${activeBriefCard === 'quota' ? 'is-active' : ''}`}
+              onClick={() => {
+                setActiveBriefCard('quota');
+                setActiveAnalyticsCard(null);
+              }}
+            >
               <span className="label">Weekly Quota</span>
               <strong className="number">{brief?.upcomingQuota || 5}</strong>
               <span className="detail">Posts needed</span>
-            </div>
+            </button>
           </div>
+          {selectedInsight && <p className="card-selection-hint">{selectedInsight}</p>}
         </div>
 
         {/* Approval Workflow Status */}
@@ -194,33 +255,62 @@ export function ContentManagementPanel() {
             <button className="ghost-btn">Full Analytics</button>
           </div>
           <div className="analytics-grid">
-            <div className="analytic-card">
+            <button
+              type="button"
+              className={`analytic-card ${activeAnalyticsCard === 'totalVideos' ? 'is-active' : ''}`}
+              onClick={() => {
+                setActiveAnalyticsCard('totalVideos');
+                setActiveBriefCard(null);
+              }}
+            >
               <span className="metric">Total Videos Posted</span>
               <strong className="value">
                 {dashboardData?.weeklyAnalytics?.totalVideos || 0}
               </strong>
-            </div>
-            <div className="analytic-card highlight">
+            </button>
+            <button
+              type="button"
+              className={`analytic-card highlight ${activeAnalyticsCard === 'engagement' ? 'is-active' : ''}`}
+              onClick={() => {
+                setActiveAnalyticsCard('engagement');
+                setActiveBriefCard(null);
+              }}
+            >
               <span className="metric">Avg Engagement Rate</span>
               <strong className="value">
                 {(dashboardData?.weeklyAnalytics?.platforms?.instagram?.avgEngagementRate || 0).toFixed(
                   1
                 )}%
               </strong>
-            </div>
-            <div className="analytic-card">
+            </button>
+            <button
+              type="button"
+              className={`analytic-card ${activeAnalyticsCard === 'bestTime' ? 'is-active' : ''}`}
+              onClick={() => {
+                setActiveAnalyticsCard('bestTime');
+                setActiveBriefCard(null);
+              }}
+            >
               <span className="metric">Best Posting Time</span>
               <strong className="value">
                 {dashboardData?.weeklyAnalytics?.trends?.bestPostingTime || '18:00 UTC'}
               </strong>
-            </div>
-            <div className="analytic-card">
+            </button>
+            <button
+              type="button"
+              className={`analytic-card ${activeAnalyticsCard === 'viralThreshold' ? 'is-active' : ''}`}
+              onClick={() => {
+                setActiveAnalyticsCard('viralThreshold');
+                setActiveBriefCard(null);
+              }}
+            >
               <span className="metric">Viral Threshold</span>
               <strong className="value">
                 {dashboardData?.weeklyAnalytics?.trends?.virialityThreshold || 5}%
               </strong>
-            </div>
+            </button>
           </div>
+          {selectedInsight && <p className="card-selection-hint">{selectedInsight}</p>}
         </div>
       </section>
 

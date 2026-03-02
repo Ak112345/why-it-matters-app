@@ -4,6 +4,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import { checkPlatformTokenHealth } from './tokenHealth';
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -396,19 +397,27 @@ async function publishSingleVideo(
     // Route to correct platform
     let result: { success: boolean; postUrl?: string; error?: string };
 
-    switch (queueItem.platform) {
-      case 'instagram':
-        result = await publishToInstagram(videoUrl, caption);
-        break;
-      case 'facebook':
-        result = await publishToFacebook(videoUrl, caption);
-        break;
-      case 'youtube_shorts':
-      case 'youtube':
-        result = await publishToYouTube(videoUrl, caption, hook);
-        break;
-      default:
-        result = { success: false, error: `Unknown platform: ${queueItem.platform}` };
+    const tokenHealth = await checkPlatformTokenHealth(queueItem.platform);
+    if (!tokenHealth.ok) {
+      result = {
+        success: false,
+        error: `Token health check failed: ${tokenHealth.error}`,
+      };
+    } else {
+      switch (queueItem.platform) {
+        case 'instagram':
+          result = await publishToInstagram(videoUrl, caption);
+          break;
+        case 'facebook':
+          result = await publishToFacebook(videoUrl, caption);
+          break;
+        case 'youtube_shorts':
+        case 'youtube':
+          result = await publishToYouTube(videoUrl, caption, hook);
+          break;
+        default:
+          result = { success: false, error: `Unknown platform: ${queueItem.platform}` };
+      }
     }
 
     // Update queue item status

@@ -455,6 +455,23 @@ h4 {
   padding: 1rem;
   display: grid;
   gap: 0.3rem;
+  text-align: left;
+  width: 100%;
+  border-top: 1px solid transparent;
+  border-right: 1px solid transparent;
+  border-bottom: 1px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.brief-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(15, 26, 26, 0.08);
+}
+
+.brief-card.is-active {
+  border-color: var(--teal-deep);
+  box-shadow: 0 0 0 2px rgba(13, 60, 61, 0.14);
 }
 
 .brief-card.status-pending {
@@ -623,6 +640,18 @@ h4 {
   padding: 1.2rem;
   border: 1px solid var(--border);
   text-align: center;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.analytic-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(15, 26, 26, 0.08);
+}
+
+.analytic-card.is-active {
+  border-color: var(--teal-deep);
+  box-shadow: 0 0 0 2px rgba(13, 60, 61, 0.14);
 }
 
 .analytic-card.highlight {
@@ -643,6 +672,12 @@ h4 {
   font-family: 'Fraunces', serif;
   font-weight: 600;
   color: var(--ink);
+}
+
+.card-selection-hint {
+  margin-top: 0.9rem;
+  font-size: 0.86rem;
+  color: var(--teal-deep);
 }
 
 /* Editorial Calendar */
