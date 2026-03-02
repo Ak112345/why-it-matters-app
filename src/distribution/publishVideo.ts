@@ -568,7 +568,6 @@ async function publishSingleVideo(
         .from('posting_queue')
         .update({
           status: result.success ? 'posted' : 'failed',
-          posted_at: result.success ? new Date().toISOString() : null,
           error_message: result.error || null,
           updated_at: new Date().toISOString(),
         })

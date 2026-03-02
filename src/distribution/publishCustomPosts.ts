@@ -18,7 +18,7 @@ export async function publishCarouselPost(queueId: string) {
 
   // Placeholder: Implement Instagram API call for carousel posting
   // For now, mark as posted
-  await supabase.from('posting_queue').update({ status: 'posted', posted_at: new Date().toISOString() }).eq('id', queueId);
+  await supabase.from('posting_queue').update({ status: 'posted' }).eq('id', queueId);
   return { success: true, queueId };
 }
 
@@ -30,6 +30,6 @@ export async function publishArticlePost(queueId: string) {
 
   // Placeholder: Implement Facebook API call for article posting
   // For now, mark as posted
-  await supabase.from('posting_queue').update({ status: 'posted', posted_at: new Date().toISOString() }).eq('id', queueId);
+  await supabase.from('posting_queue').update({ status: 'posted' }).eq('id', queueId);
   return { success: true, queueId };
 }

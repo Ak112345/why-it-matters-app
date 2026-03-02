@@ -17,13 +17,12 @@ export async function GET() {
         status,
         caption,
         scheduled_for,
-        posted_at,
         created_at,
         final_video_id
       `)
       .eq('platform', 'tiktok')
       .eq('status', 'posted')
-      .order('posted_at', { ascending: false });
+      .order('created_at', { ascending: false });
 
     if (error) {
       console.error('Error fetching TikTok videos:', error);
@@ -48,7 +47,7 @@ export async function GET() {
         videoId: post.final_video_id,
         videoUrl: video?.video_url,
         caption: post.caption,
-        readyAt: post.posted_at,
+        readyAt: post.created_at,
         scheduledFor: post.scheduled_for,
         createdAt: post.created_at,
       };
