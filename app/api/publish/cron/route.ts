@@ -12,6 +12,13 @@ export async function GET() {
   try {
     console.log('[CRON] Starting automated publishing check...');
 
+    const t = process.env.FACEBOOK_PAGE_ACCESS_TOKEN ?? '';
+    console.log('IG TOKEN', {
+      len: t.length,
+      start: t.slice(0, 6),
+      end: t.slice(-6),
+    });
+
     // Publish all pending posts that are due
     const results: PublishResult[] = await publishVideo({
       dryRun: false,
