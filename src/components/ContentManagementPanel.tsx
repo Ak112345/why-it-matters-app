@@ -18,6 +18,34 @@ interface ApprovalStats {
   averageReviewTime: number;
 }
 
+interface QueueStats {
+  summary: {
+    total: number;
+    pending: number;
+    failed: number;
+    posted: number;
+    scheduled: number;
+    readyToPost: number;
+  };
+  byPlatform: Record<string, {
+    total: number;
+    pending: number;
+    failed: number;
+    posted: number;
+  }>;
+  nextScheduled: {
+    platform: string;
+    scheduledFor: string;
+    hasVideo: boolean;
+  } | null;
+  recentFailures: Array<{
+    id: string;
+    platform: string;
+    error: string;
+    timestamp: string;
+  }>;
+}
+
 interface ContentDashboardData {
   directorBrief: DirectorBrief;
   approvalStats: ApprovalStats;
@@ -26,6 +54,7 @@ interface ContentDashboardData {
 
 export function ContentManagementPanel() {
   const [dashboardData, setDashboardData] = useState<ContentDashboardData | null>(null);
+  const [queueStats, setQueueStats] = useState<QueueStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeBriefCard, setActiveBriefCard] = useState<string | null>(null);
   const [activeAnalyticsCard, setActiveAnalyticsCard] = useState<string | null>(null);
@@ -33,10 +62,20 @@ export function ContentManagementPanel() {
   useEffect(() => {
     const fetchDashboard = async () => {
       try {
-        const response = await fetch('/api/content');
-        const data = await response.json();
-        if (data.success) {
-          setDashboardData(data.data);
+        const [contentRes, queueRes] = await Promise.all([
+          fetch('/api/content'),
+          fetch('/api/queue/stats'),
+        ]);
+        
+        const contentData = await contentRes.json();
+        const queueData = await queueRes.json();
+        
+        if (contentData.success) {
+          setDashboardData(contentData.data);
+        }
+        
+        if (queueData.success) {
+          setQueueStats(queueData.data);
         }
       } catch (error) {
         console.error('Failed to load content dashboard:', error);
@@ -95,6 +134,106 @@ export function ContentManagementPanel() {
 
   return (
     <>
+      {/* Posting Queue Status */}
+      <section className="zone zone-primary content-management">
+        <div className="panel">
+          <div className="panel-header">
+            <div>
+              <h2>📤 Posting Queue Status</h2>
+              <p>Videos queued for publishing across platforms</p>
+            </div>
+          </div>
+          <div className="brief-grid">
+            <div className="brief-card status-ready">
+              <span className="label">Ready to Post</span>
+              <strong className="number">{queueStats?.summary.readyToPost || 0}</strong>
+              <span className="detail">Finalized videos</span>
+            </div>
+            <div className="brief-card status-pending">
+              <span className="label">Scheduled</span>
+              <strong className="number">{queueStats?.summary.scheduled || 0}</strong>
+              <span className="detail">Awaiting publish time</span>
+            </div>
+            <div className="brief-card status-quota">
+              <span className="label">Posted</span>
+              <strong className="number">{queueStats?.summary.posted || 0}</strong>
+              <span className="detail">Successfully published</span>
+            </div>
+            <div className="brief-card status-critical">
+              <span className="label">Failed</span>
+              <strong className="number">{queueStats?.summary.failed || 0}</strong>
+              <span className="detail">Need attention</span>
+            </div>
+          </div>
+          
+          {queueStats?.summary.readyToPost === 0 && queueStats?.summary.scheduled === 0 && (
+            <div style={{ marginTop: '1rem', padding: '1rem', background: '#f0f0f0', borderRadius: '4px' }}>
+              <p style={{ margin: 0, color: '#666' }}>
+                ℹ️ No videos currently queued for posting. Videos need to be finalized and queued before they can be published.
+              </p>
+            </div>
+          )}
+          
+          {queueStats && queueStats.summary.readyToPost > 0 && (
+            <div style={{ marginTop: '1rem', padding: '1rem', background: '#e8f5e9', borderRadius: '4px' }}>
+              <p style={{ margin: 0, color: '#2e7d32', fontWeight: 500 }}>
+                ✅ {queueStats.summary.readyToPost} video{queueStats.summary.readyToPost !== 1 ? 's' : ''} ready to publish
+              </p>
+            </div>
+          )}
+          
+          {queueStats?.nextScheduled && (
+            <div style={{ marginTop: '1rem', padding: '1rem', background: '#e3f2fd', borderRadius: '4px' }}>
+              <p style={{ margin: 0, color: '#1565c0' }}>
+                ⏰ Next post: <strong>{queueStats.nextScheduled.platform}</strong> at{' '}
+                {new Date(queueStats.nextScheduled.scheduledFor).toLocaleString()}
+                {!queueStats.nextScheduled.hasVideo && ' (⚠️ video not finalized)'}
+              </p>
+            </div>
+          )}
+          
+          {queueStats && Object.keys(queueStats.byPlatform).length > 0 && (
+            <div style={{ marginTop: '1rem' }}>
+              <h4 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>By Platform:</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.5rem' }}>
+                {Object.entries(queueStats.byPlatform).map(([platform, stats]) => (
+                  <div key={platform} style={{ padding: '0.5rem', background: '#f5f5f5', borderRadius: '4px' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#666', textTransform: 'capitalize' }}>{platform.replace('_', ' ')}</div>
+                    <div style={{ fontSize: '0.875rem', marginTop: '0.25rem' }}>
+                      <span style={{ color: '#4caf50' }}>✓{stats.posted}</span>
+                      {' · '}
+                      <span style={{ color: '#ff9800' }}>⏳{stats.pending}</span>
+                      {' · '}
+                      <span style={{ color: '#f44336' }}>✗{stats.failed}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {queueStats && queueStats.recentFailures.length > 0 && (
+            <details style={{ marginTop: '1rem', padding: '1rem', background: '#fff3e0', borderRadius: '4px' }}>
+              <summary style={{ cursor: 'pointer', fontWeight: 500, color: '#e65100' }}>
+                ⚠️ Recent Failures ({queueStats.recentFailures.length})
+              </summary>
+              <div style={{ marginTop: '0.5rem' }}>
+                {queueStats.recentFailures.map((failure) => (
+                  <div key={failure.id} style={{ padding: '0.5rem', background: 'white', borderRadius: '4px', marginTop: '0.5rem' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#666' }}>
+                      <strong>{failure.platform}</strong> · {new Date(failure.timestamp).toLocaleString()}
+                    </div>
+                    <div style={{ fontSize: '0.875rem', color: '#d32f2f', marginTop: '0.25rem' }}>
+                      {failure.error}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      </section>
+
       {/* Director&apos;s Brief */}
       <section className="zone zone-primary content-management">
         <div className="panel director-brief">

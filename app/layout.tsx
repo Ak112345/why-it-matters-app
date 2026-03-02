@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './styles/globals.css';
+import AuthProvider from './providers/AuthProvider';
 
 export const metadata: Metadata = {
   title: 'Why It Matters',
@@ -14,7 +15,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

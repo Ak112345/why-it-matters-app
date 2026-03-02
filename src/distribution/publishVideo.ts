@@ -31,6 +31,56 @@ export interface PublishResult {
 }
 
 // ─────────────────────────────────────────────
+// TikTok (Storage for manual batch scheduling)
+// ─────────────────────────────────────────────
+
+async function uploadToTikTokStorage(
+  videoId: string,
+  videoUrl: string,
+  caption: string
+): Promise<{ success: boolean; postUrl?: string; error?: string }> {
+  try {
+    console.log('[publish] TikTok: Copying video to TikTok storage...');
+
+    // Create a metadata entry in posting_queue with special status
+    // The video is already in final_videos bucket, just mark as ready for manual scheduling
+    const metadataPath = `tiktok_ready/${videoId}.json`;
+    
+    const metadata = {
+      videoId,
+      videoUrl,
+      caption,
+      readyAt: new Date().toISOString(),
+      platform: 'tiktok',
+      instructions: 'Ready for manual batch scheduling via TikTok Creator Tools'
+    };
+
+    // Store metadata in Supabase storage
+    const { error: uploadError } = await supabase.storage
+      .from('final_videos')
+      .upload(metadataPath, JSON.stringify(metadata, null, 2), {
+        contentType: 'application/json',
+        upsert: true
+      });
+
+    if (uploadError) {
+      throw new Error(`Failed to save TikTok metadata: ${uploadError.message}`);
+    }
+
+    console.log(`[publish] TikTok: Video ${videoId} ready for manual scheduling`);
+    console.log(`[publish] TikTok: Metadata saved to ${metadataPath}`);
+
+    return {
+      success: true,
+      postUrl: `storage://tiktok_ready/${videoId}`,
+    };
+  } catch (error: any) {
+    console.error('[publish] TikTok storage error:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+// ─────────────────────────────────────────────
 // Instagram (Meta Graph API)
 // Docs: https://developers.facebook.com/docs/instagram-api/guides/reels-publishing
 // ─────────────────────────────────────────────
@@ -211,12 +261,32 @@ async function publishToFacebook(
 // ─────────────────────────────────────────────
 
 async function refreshYouTubeToken(): Promise<string> {
+  const youtubeClientId = process.env.YOUTUBE_CLIENT_ID;
+  const youtubeClientSecret = process.env.YOUTUBE_CLIENT_SECRET;
+  const oauthClientId = process.env.OAUTH_CLIENT_ID;
+  const oauthClientSecret = process.env.OAUTH_CLIENT_SECRET;
+
+  const hasYouTubePair = !!youtubeClientId && !!youtubeClientSecret;
+  const hasOAuthPair = !!oauthClientId && !!oauthClientSecret;
+
+  const clientId = hasYouTubePair
+    ? youtubeClientId
+    : hasOAuthPair
+      ? oauthClientId
+      : (youtubeClientId || oauthClientId);
+
+  const clientSecret = hasYouTubePair
+    ? youtubeClientSecret
+    : hasOAuthPair
+      ? oauthClientSecret
+      : (youtubeClientSecret || oauthClientSecret);
+
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      client_id: process.env.YOUTUBE_CLIENT_ID!,
-      client_secret: process.env.YOUTUBE_CLIENT_SECRET!,
+      client_id: clientId!,
+      client_secret: clientSecret!,
       refresh_token: process.env.YOUTUBE_REFRESH_TOKEN!,
       grant_type: 'refresh_token',
     }),
@@ -235,7 +305,17 @@ async function publishToYouTube(
   caption: string,
   hook: string
 ): Promise<{ success: boolean; postUrl?: string; error?: string }> {
-  if (!process.env.YOUTUBE_CLIENT_ID || !process.env.YOUTUBE_CLIENT_SECRET || !process.env.YOUTUBE_REFRESH_TOKEN) {
+  const youtubeClientId = process.env.YOUTUBE_CLIENT_ID;
+  const youtubeClientSecret = process.env.YOUTUBE_CLIENT_SECRET;
+  const oauthClientId = process.env.OAUTH_CLIENT_ID;
+  const oauthClientSecret = process.env.OAUTH_CLIENT_SECRET;
+
+  const hasYouTubePair = !!youtubeClientId && !!youtubeClientSecret;
+  const hasOAuthPair = !!oauthClientId && !!oauthClientSecret;
+  const clientId = hasYouTubePair ? youtubeClientId : (hasOAuthPair ? oauthClientId : undefined);
+  const clientSecret = hasYouTubePair ? youtubeClientSecret : (hasOAuthPair ? oauthClientSecret : undefined);
+
+  if (!clientId || !clientSecret || !process.env.YOUTUBE_REFRESH_TOKEN) {
     return { success: false, error: 'Missing YouTube OAuth credentials' };
   }
 
@@ -396,40 +476,84 @@ async function publishSingleVideo(
 
     // Route to correct platform
     let result: { success: boolean; postUrl?: string; error?: string };
+    let shouldReschedule = false;
 
-    const tokenHealth = await checkPlatformTokenHealth(queueItem.platform);
-    if (!tokenHealth.ok) {
-      result = {
-        success: false,
-        error: `Token health check failed: ${tokenHealth.error}`,
-      };
+    // TikTok: Upload to storage for manual batch scheduling
+    if (queueItem.platform === 'tiktok') {
+      result = await uploadToTikTokStorage(video.id, videoUrl, caption);
     } else {
-      switch (queueItem.platform) {
-        case 'instagram':
-          result = await publishToInstagram(videoUrl, caption);
-          break;
-        case 'facebook':
-          result = await publishToFacebook(videoUrl, caption);
-          break;
-        case 'youtube_shorts':
-        case 'youtube':
-          result = await publishToYouTube(videoUrl, caption, hook);
-          break;
-        default:
-          result = { success: false, error: `Unknown platform: ${queueItem.platform}` };
+      const tokenHealth = await checkPlatformTokenHealth(queueItem.platform);
+      if (!tokenHealth.ok) {
+        shouldReschedule = true; // Auth failures should be rescheduled
+        result = {
+          success: false,
+          error: `Token health check failed: ${tokenHealth.error}`,
+        };
+      } else {
+        switch (queueItem.platform) {
+          case 'instagram':
+            result = await publishToInstagram(videoUrl, caption);
+            break;
+          case 'facebook':
+            result = await publishToFacebook(videoUrl, caption);
+            break;
+          case 'youtube_shorts':
+          case 'youtube':
+            result = await publishToYouTube(videoUrl, caption, hook);
+            break;
+          default:
+            result = { success: false, error: `Unknown platform: ${queueItem.platform}` };
+        }
+      }
+
+      // Check if failure is auth-related and should be rescheduled
+      if (!result.success && result.error) {
+        const authErrors = [
+          'token',
+          'auth',
+          'unauthorized',
+          'expired',
+          'invalid oauth',
+          'permission',
+          'credential'
+        ];
+        const isAuthError = authErrors.some(keyword => 
+          result.error!.toLowerCase().includes(keyword)
+        );
+        if (isAuthError) {
+          shouldReschedule = true;
+        }
       }
     }
 
     // Update queue item status
-    await supabase
-      .from('posting_queue')
-      .update({
-        status: result.success ? 'posted' : 'failed',
-        posted_at: result.success ? new Date().toISOString() : null,
-        error_message: result.error || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', queueId);
+    if (shouldReschedule && !result.success) {
+      // Reschedule auth failures for 1 hour from now
+      const newScheduledFor = new Date();
+      newScheduledFor.setHours(newScheduledFor.getHours() + 1);
+      
+      console.log(`[publish] Rescheduling ${queueId} due to auth error...`);
+      
+      await supabase
+        .from('posting_queue')
+        .update({
+          status: 'pending',
+          scheduled_for: newScheduledFor.toISOString(),
+          error_message: `[Auto-rescheduled] ${result.error}`,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', queueId);
+    } else {
+      await supabase
+        .from('posting_queue')
+        .update({
+          status: result.success ? 'posted' : 'failed',
+          posted_at: result.success ? new Date().toISOString() : null,
+          error_message: result.error || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', queueId);
+    }
 
     return {
       queueId,

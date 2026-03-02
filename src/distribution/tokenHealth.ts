@@ -86,15 +86,22 @@ async function checkFacebookToken(): Promise<PlatformTokenHealth> {
 }
 
 async function checkYouTubeToken(): Promise<PlatformTokenHealth> {
-  const clientId = process.env.YOUTUBE_CLIENT_ID;
-  const clientSecret = process.env.YOUTUBE_CLIENT_SECRET;
+  const youtubeClientId = process.env.YOUTUBE_CLIENT_ID;
+  const youtubeClientSecret = process.env.YOUTUBE_CLIENT_SECRET;
+  const oauthClientId = process.env.OAUTH_CLIENT_ID;
+  const oauthClientSecret = process.env.OAUTH_CLIENT_SECRET;
   const refreshToken = process.env.YOUTUBE_REFRESH_TOKEN;
+
+  const hasYouTubePair = !!youtubeClientId && !!youtubeClientSecret;
+  const hasOAuthPair = !!oauthClientId && !!oauthClientSecret;
+  const clientId = hasYouTubePair ? youtubeClientId : (hasOAuthPair ? oauthClientId : undefined);
+  const clientSecret = hasYouTubePair ? youtubeClientSecret : (hasOAuthPair ? oauthClientSecret : undefined);
 
   if (!clientId || !clientSecret || !refreshToken) {
     return {
       platform: 'youtube',
       ok: false,
-      error: 'Missing YOUTUBE_CLIENT_ID/YOUTUBE_CLIENT_SECRET/YOUTUBE_REFRESH_TOKEN',
+      error: 'Missing YOUTUBE_CLIENT_ID/(YOUTUBE_CLIENT_SECRET or OAUTH_CLIENT_SECRET)/YOUTUBE_REFRESH_TOKEN',
     };
   }
 
