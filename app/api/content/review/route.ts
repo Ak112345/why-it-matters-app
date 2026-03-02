@@ -17,9 +17,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const searchParams = request.nextUrl.searchParams;
+    const searchParams = new URL(req.url).searchParams;
     const action = searchParams.get('action') || 'pending';
 
     if (action === 'pending') {
@@ -53,7 +53,7 @@ export async function GET() {
   }
 }
 
-export async function POST() {
+export async function POST(req: Request) {
   const SUPABASE_URL = process.env.SUPABASE_URL;
   const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -63,7 +63,7 @@ export async function POST() {
   // create supabase client here if needed
 
   try {
-    const body = await request.json();
+    const body = await req.json();
     const { action, taskId, editorId, approved, feedback, clipId, revisions } = body;
 
     if (action === 'assign') {

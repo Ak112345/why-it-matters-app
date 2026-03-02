@@ -242,7 +242,7 @@ export async function getDirectorBrief(): Promise<{
   upcomingQuota: number;
 }> {
   try {
-    // Query for content status breakdown
+    // Primary source: content_direction status breakdown
     const { data, error } = await supabase
       .from('content_direction')
       .select('status, content_pillar, validation_score');
@@ -260,13 +260,41 @@ export async function getDirectorBrief(): Promise<{
       };
     }
 
-    const pending = data.filter((item: any) => item.status === ContentStatus.QA_PENDING).length;
-    const critical = data.filter(
+    const pendingFromDirection = data.filter((item: any) => item.status === ContentStatus.QA_PENDING).length;
+    const criticalFromDirection = data.filter(
       (item: any) => item.validation_score < 50 && item.status !== ContentStatus.REJECTED
     ).length;
-    const readyForProduction = data.filter(
+    const readyFromDirection = data.filter(
       (item: any) => item.status === ContentStatus.APPROVED
     ).length;
+
+    // Fallback sources for environments where content_direction is sparsely populated
+    const { data: reviewTasks } = await supabase
+      .from('review_tasks')
+      .select('stage, priority, issues');
+
+    const { data: finalVideos } = await supabase
+      .from('videos_final')
+      .select('status');
+
+    const pendingFromReviews = (reviewTasks || []).filter(
+      (task: any) => task.stage === 'pending' || task.stage === 'in_review'
+    ).length;
+
+    const criticalFromReviews = (reviewTasks || []).filter((task: any) => {
+      const highPriority = task.priority === 'high' || task.priority === 'urgent';
+      const hasCriticalIssue = Array.isArray(task.issues)
+        && task.issues.some((issue: any) => issue?.type === 'critical');
+      return highPriority || hasCriticalIssue;
+    }).length;
+
+    const readyFromVideos = (finalVideos || []).filter(
+      (video: any) => video.status === 'approved' || video.status === 'ready'
+    ).length;
+
+    const totalPending = Math.max(pendingFromDirection, pendingFromReviews);
+    const criticalIssues = Math.max(criticalFromDirection, criticalFromReviews);
+    const readyForProduction = Math.max(readyFromDirection, readyFromVideos);
 
     const byPillar: Record<ContentPillar, number> = Object.values(ContentPillar).reduce(
       (acc, pillar) => ({
@@ -277,8 +305,8 @@ export async function getDirectorBrief(): Promise<{
     );
 
     return {
-      totalPending: pending,
-      criticalIssues: critical,
+      totalPending,
+      criticalIssues,
       readyForProduction,
       byPillar,
       upcomingQuota: 5,
