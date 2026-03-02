@@ -89,14 +89,17 @@ async function publishToInstagram(
   videoUrl: string,
   caption: string
 ): Promise<{ success: boolean; postUrl?: string; error?: string }> {
-  const igUserId = process.env.INSTAGRAM_USER_ID || process.env.META_IG_BUSINESS_ID;
-  const accessToken = process.env.INSTAGRAM_ACCESS_TOKEN || process.env.META_PAGE_ACESS_TOKEN;
-
-  if (!igUserId || !accessToken) {
-    return { success: false, error: 'Missing INSTAGRAM_USER_ID or INSTAGRAM_ACCESS_TOKEN' };
+  const igUserId = process.env.INSTAGRAM_BUSINESS_ID || process.env.INSTAGRAM_USER_ID || process.env.META_IG_BUSINESS_ID;
+  
+  if (!igUserId) {
+    return { success: false, error: 'Missing INSTAGRAM_BUSINESS_ID' };
   }
 
   try {
+    // Get fresh access token
+    console.log('[publish] Instagram: Refreshing access token...');
+    const accessToken = await refreshInstagramToken();
+    
     console.log('[publish] Instagram: Creating media container...');
 
     // Step 1: Create a Reels container
@@ -188,14 +191,17 @@ async function publishToFacebook(
   videoUrl: string,
   caption: string
 ): Promise<{ success: boolean; postUrl?: string; error?: string }> {
-  const pageId = process.env.META_BUSINESS_FACEBOOK_ID;
-  const accessToken = process.env.FACEBOOK_PAGE_ACCESS_TOKEN || process.env.META_PAGE_ACESS_TOKEN;
+  const pageId = process.env.FACEBOOK_PAGE_ID || process.env.META_BUSINESS_FACEBOOK_ID;
 
-  if (!pageId || !accessToken) {
-    return { success: false, error: 'Missing META_BUSINESS_FACEBOOK_ID or FACEBOOK_PAGE_ACCESS_TOKEN' };
+  if (!pageId) {
+    return { success: false, error: 'Missing FACEBOOK_PAGE_ID' };
   }
 
   try {
+    // Get fresh access token
+    console.log('[publish] Facebook: Refreshing access token...');
+    const accessToken = await refreshMetaPageToken();
+    
     console.log('[publish] Facebook: Uploading reel...');
 
     // Step 1: Initialize upload session
@@ -260,33 +266,17 @@ async function publishToFacebook(
 // Docs: https://developers.google.com/youtube/v3/guides/uploading_a_video
 // ─────────────────────────────────────────────
 
+/**
+ * Refresh YouTube access token using refresh token
+ * Tokens expire after 1 hour, this generates a fresh one
+ */
 async function refreshYouTubeToken(): Promise<string> {
-  const youtubeClientId = process.env.YOUTUBE_CLIENT_ID;
-  const youtubeClientSecret = process.env.YOUTUBE_CLIENT_SECRET;
-  const oauthClientId = process.env.OAUTH_CLIENT_ID;
-  const oauthClientSecret = process.env.OAUTH_CLIENT_SECRET;
-
-  const hasYouTubePair = !!youtubeClientId && !!youtubeClientSecret;
-  const hasOAuthPair = !!oauthClientId && !!oauthClientSecret;
-
-  const clientId = hasYouTubePair
-    ? youtubeClientId
-    : hasOAuthPair
-      ? oauthClientId
-      : (youtubeClientId || oauthClientId);
-
-  const clientSecret = hasYouTubePair
-    ? youtubeClientSecret
-    : hasOAuthPair
-      ? oauthClientSecret
-      : (youtubeClientSecret || oauthClientSecret);
-
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      client_id: clientId!,
-      client_secret: clientSecret!,
+      client_id: process.env.YOUTUBE_CLIENT_ID!,
+      client_secret: process.env.YOUTUBE_CLIENT_SECRET!,
       refresh_token: process.env.YOUTUBE_REFRESH_TOKEN!,
       grant_type: 'refresh_token',
     }),
@@ -297,7 +287,46 @@ async function refreshYouTubeToken(): Promise<string> {
     throw new Error(`YouTube token refresh failed: ${data.error_description || res.status}`);
   }
 
+  console.log('[token] YouTube access token refreshed successfully');
   return data.access_token;
+}
+
+/**
+ * Refresh Meta/Facebook page access token using long-lived user token
+ * Page tokens can be refreshed from user tokens
+ */
+async function refreshMetaPageToken(): Promise<string> {
+  const pageId = process.env.FACEBOOK_PAGE_ID;
+  const userToken = process.env.META_USER_ACCESS_TOKEN;
+
+  if (!pageId || !userToken) {
+    throw new Error('Missing FACEBOOK_PAGE_ID or META_USER_ACCESS_TOKEN');
+  }
+
+  try {
+    // Get fresh page access token from user token
+    const res = await fetch(
+      `https://graph.facebook.com/v19.0/${pageId}?fields=access_token&access_token=${userToken}`
+    );
+
+    const data = await res.json();
+    if (!res.ok || !data.access_token) {
+      throw new Error(data.error?.message || 'Failed to refresh page token');
+    }
+
+    console.log('[token] Meta page access token refreshed successfully');
+    return data.access_token;
+  } catch (err: any) {
+    console.error('[token] Meta token refresh failed:', err.message);
+    throw err;
+  }
+}
+
+/**
+ * Refresh Instagram access token (uses same page token as Facebook)
+ */
+async function refreshInstagramToken(): Promise<string> {
+  return refreshMetaPageToken();
 }
 
 async function publishToYouTube(
@@ -305,21 +334,12 @@ async function publishToYouTube(
   caption: string,
   hook: string
 ): Promise<{ success: boolean; postUrl?: string; error?: string }> {
-  const youtubeClientId = process.env.YOUTUBE_CLIENT_ID;
-  const youtubeClientSecret = process.env.YOUTUBE_CLIENT_SECRET;
-  const oauthClientId = process.env.OAUTH_CLIENT_ID;
-  const oauthClientSecret = process.env.OAUTH_CLIENT_SECRET;
-
-  const hasYouTubePair = !!youtubeClientId && !!youtubeClientSecret;
-  const hasOAuthPair = !!oauthClientId && !!oauthClientSecret;
-  const clientId = hasYouTubePair ? youtubeClientId : (hasOAuthPair ? oauthClientId : undefined);
-  const clientSecret = hasYouTubePair ? youtubeClientSecret : (hasOAuthPair ? oauthClientSecret : undefined);
-
-  if (!clientId || !clientSecret || !process.env.YOUTUBE_REFRESH_TOKEN) {
+  if (!process.env.YOUTUBE_CLIENT_ID || !process.env.YOUTUBE_CLIENT_SECRET || !process.env.YOUTUBE_REFRESH_TOKEN) {
     return { success: false, error: 'Missing YouTube OAuth credentials' };
   }
 
   try {
+    // Get fresh access token (auto-refreshes every time)
     console.log('[publish] YouTube: Refreshing access token...');
     const accessToken = await refreshYouTubeToken();
 

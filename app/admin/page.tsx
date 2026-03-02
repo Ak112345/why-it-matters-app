@@ -1,5 +1,6 @@
 "use client";
 import React, { useEffect, useState } from "react";
+import TokenHealthPanel from "../../src/components/TokenHealthPanel";
 
 function fetchWithAuth(url: string) {
   const accessToken = "";
@@ -9,10 +10,6 @@ function fetchWithAuth(url: string) {
 }
 
 export default function AdminPage() {
-  const fbTokenExpiry = new Date("2026-04-23");
-  const now = new Date();
-  const daysToExpiry = Math.ceil((fbTokenExpiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-
   const [metaCarousels, setMetaCarousels] = useState<any>(null);
   const [metaArticles, setMetaArticles] = useState<any>(null);
   const [overview, setOverview] = useState<any>(null);
@@ -41,12 +38,13 @@ export default function AdminPage() {
 
   return (
     <div>
-      {daysToExpiry <= 7 && (
-        <div style={{ background: "#fffbe6", color: "#ad6800", padding: "12px", borderRadius: "6px", marginBottom: "16px", border: "1px solid #ffe58f" }}>
-          <strong>Reminder:</strong> Your Facebook token expires in {daysToExpiry} day{daysToExpiry !== 1 ? "s" : ""} (April 23, 2026).
-        </div>
-      )}
-      <h1>Admin Dashboard</h1>
+      <h1 style={{ marginBottom: "20px" }}>Admin Dashboard</h1>
+      
+      {/* Token Health Monitor - Shows automatic alerts */}
+      <div style={{ marginBottom: "24px" }}>
+        <TokenHealthPanel />
+      </div>
+
       <div>
         <h2>Meta Carousels</h2>
         <pre>{JSON.stringify(metaCarousels, null, 2)}</pre>
