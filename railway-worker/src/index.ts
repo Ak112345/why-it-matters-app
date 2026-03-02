@@ -1,3 +1,4 @@
+// cache-bust: 2026-03-02
 // railway-worker/src/index.ts
 // Express + FFmpeg worker — trims Pexels clips, burns captions, uploads to Supabase
 
