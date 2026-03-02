@@ -21,7 +21,9 @@
     "remediation:once": "ts-node scripts/remediation-service.ts once",
     "verify:segments": "ts-node --esm scripts/list-segment-ids.ts",
     "diagnose:pipeline": "ts-node --esm scripts/diagnose-pipeline.ts",
-    "publish:health": "ts-node --esm scripts/check-publish-token-health.ts"
+    "publish:health": "ts-node --esm scripts/check-publish-token-health.ts",
+    "extract:page-token": "ts-node --esm scripts/extract-page-token.ts",
+    "extract:page-token:auto": "ts-node --esm scripts/extract-page-token.ts --update"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
