@@ -6,6 +6,8 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/src/utils/supabaseClient';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     // Get all queue items
@@ -26,28 +28,24 @@ export async function GET() {
     
     // Calculate statistics
     const now = new Date();
-    const pendingItems = items.filter((item: any) => item.status === 'pending');
-    const failedItems = items.filter((item: any) => item.status === 'failed');
-    const postedItems = items.filter((item: any) => item.status === 'posted');
-    const scheduledItems = items.filter((item: any) => 
-      item.status === 'pending' && new Date(item.scheduled_for) > now
-    );
+    const pending = items.filter((item: any) => item.status === 'pending').length;
+    const failed = items.filter((item: any) => item.status === 'failed').length;
+    const posted = items.filter((item: any) => item.status === 'posted').length;
     
-    // Items ready to post (finalized video exists)
-    const readyToPost = items.filter((item: any) => 
-      item.status === 'pending' && item.final_video_id !== null
+    return NextResponse.json({
+      pending,
+      failed,
+      posted,
+      total: items.length
+    });
+  } catch (err: any) {
+    console.error('[Queue Stats] Error:', err);
+    return NextResponse.json(
+      { error: err.message },
+      { status: 500 }
     );
-    
-    // Platform breakdown
-    const byPlatform = items.reduce((acc: any, item: any) => {
-      const platform = item.platform || 'unknown';
-      if (!acc[platform]) {
-        acc[platform] = { total: 0, pending: 0, failed: 0, posted: 0 };
-      }
-      acc[platform].total++;
-      if (item.status === 'pending') acc[platform].pending++;
-      if (item.status === 'failed') acc[platform].failed++;
-      if (item.status === 'posted') acc[platform].posted++;
+  }
+}
       return acc;
     }, {});
 
