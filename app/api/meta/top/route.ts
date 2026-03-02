@@ -2,11 +2,12 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { metaGet } from '@/lib/meta';
 
-export async function GET() {
+export async function GET(req: Request) {
   const accessToken = req.headers.get('authorization')?.replace('Bearer ', '') || '';
-  const fbPageId = req.nextUrl.searchParams.get('fbPageId');
-  const igId = req.nextUrl.searchParams.get('igId');
-  const limit = Number(req.nextUrl.searchParams.get('limit') || 10);
+  const url = new URL(req.url);
+  const fbPageId = url.searchParams.get('fbPageId');
+  const igId = url.searchParams.get('igId');
+  const limit = Number(url.searchParams.get('limit') || 10);
   let fbPosts = [];
   let igMedia = [];
   if (fbPageId) {

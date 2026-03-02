@@ -2,10 +2,11 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { metaGet } from '@/lib/meta';
 
-export async function GET() {
+export async function GET(req: Request) {
   const accessToken = req.headers.get('authorization')?.replace('Bearer ', '') || '';
-  const fbPageId = req.nextUrl.searchParams.get('fbPageId');
-  const igId = req.nextUrl.searchParams.get('igId');
+  const url = new URL(req.url);
+  const fbPageId = url.searchParams.get('fbPageId');
+  const igId = url.searchParams.get('igId');
   const fbFields = 'name,fan_count,followers_count';
   const igFields = 'username,followers_count,media_count';
   const fbOverview = fbPageId ? await metaGet<{ name?: string; fan_count?: number; followers_count?: number }>(

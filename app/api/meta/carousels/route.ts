@@ -2,9 +2,10 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { metaGet } from '@/lib/meta';
 
-export async function GET() {
+export async function GET(req: Request) {
   const accessToken = req.headers.get('authorization')?.replace('Bearer ', '') || '';
-  const igId = req.nextUrl.searchParams.get('igId');
+  const url = new URL(req.url);
+  const igId = url.searchParams.get('igId');
   // Instagram: fetch carousels (media_type=CAROUSEL_ALBUM)
   if (!igId) return NextResponse.json({ error: 'Missing igId' }, { status: 400 });
   const mediaRes = await metaGet<{ data: any[] }>(
