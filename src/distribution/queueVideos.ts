@@ -4,7 +4,7 @@ if (import.meta.url === `file://${process.cwd()}/src/distribution/queueVideos.ts
     console.log('Fetching approved, pending posts for all platforms...');
     try {
       const posts = await getUpcomingPosts(20);
-      const platforms = ['tiktok', 'instagram', 'youtube_shorts'];
+      const platforms = ['tiktok', 'instagram', 'youtube_shorts', 'facebook'];
       for (const platform of platforms) {
         const filtered = posts.filter(p => p.platform === platform && p.status === 'pending' && p.videos_final && p.videos_final.status === 'approved');
         console.log(`\nPlatform: ${platform}`);
@@ -35,7 +35,7 @@ if (import.meta.url === `file://${process.cwd()}/src/distribution/queueVideos.ts
  * Ensure queue always has approved videos ready to post
  * Replace rejected posts with next approved clip
  */
-export async function maintainQueueBuffer(bufferSize: number = 3, platforms: Array<'instagram' | 'youtube_shorts' | 'tiktok'> = ['instagram', 'youtube_shorts', 'tiktok']) {
+export async function maintainQueueBuffer(bufferSize: number = 3, platforms: Array<'instagram' | 'youtube_shorts' | 'tiktok' | 'facebook'> = ['instagram', 'youtube_shorts', 'tiktok', 'facebook']) {
   // Get pending posts
   const { data: pendingPosts, error: pendingError } = await supabase
     .from('posting_queue')
@@ -69,7 +69,7 @@ export async function maintainQueueBuffer(bufferSize: number = 3, platforms: Arr
       // Queue next approved video for same platform and time
       const nextClip = unqueuedApproved.shift();
       if (nextClip) {
-        const validPlatforms = ["instagram", "youtube_shorts", "tiktok"] as const;
+        const validPlatforms = ["instagram", "youtube_shorts", "tiktok", "facebook"] as const;
         if (
           post.platform &&
           validPlatforms.includes(post.platform as typeof validPlatforms[number]) &&
@@ -77,7 +77,7 @@ export async function maintainQueueBuffer(bufferSize: number = 3, platforms: Arr
         ) {
           await queueSingleVideo(
             nextClip.id,
-            [post.platform as "instagram" | "youtube_shorts" | "tiktok"],
+            [post.platform as "instagram" | "youtube_shorts" | "tiktok" | "facebook"],
             new Date(post.scheduled_for)
           );
         }
@@ -118,7 +118,7 @@ import { supabase } from '../utils/supabaseClient';
 
 export interface QueueVideoOptions {
   videoId?: string; // If provided, queue only this video
-  platform?: 'instagram' | 'youtube_shorts' | 'tiktok' | 'all';
+  platform?: 'instagram' | 'youtube_shorts' | 'tiktok' | 'facebook' | 'all';
   minHoursBetweenPosts?: number; // Custom interval for TikTok or others
   scheduledTime?: Date; // If not provided, schedule for next available slot
   batchSize?: number; // Number of videos to queue at once
@@ -161,7 +161,7 @@ function calculateNextPostingTime(
  */
 async function queueSingleVideo(
   videoId: string,
-  platforms: Array<'instagram' | 'youtube_shorts' | 'tiktok'>,
+  platforms: Array<'instagram' | 'youtube_shorts' | 'tiktok' | 'facebook'>,
   scheduledTime?: Date,
   minHoursBetweenPosts: number = 6
 ): Promise<QueueResult> {
@@ -271,9 +271,9 @@ export async function queueVideos(options: QueueVideoOptions = {}): Promise<Queu
   const results: QueueResult[] = [];
 
   // Determine which platforms to post to
-  const platforms: Array<'instagram' | 'youtube_shorts' | 'tiktok'> =
+  const platforms: Array<'instagram' | 'youtube_shorts' | 'tiktok' | 'facebook'> =
     platform === 'all'
-      ? ['instagram', 'youtube_shorts', 'tiktok']
+      ? ['instagram', 'youtube_shorts', 'tiktok', 'facebook']
       : [platform];
 
   try {
