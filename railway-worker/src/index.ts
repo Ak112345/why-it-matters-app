@@ -207,30 +207,23 @@ function trimAndCaptionVideo(
   drawtextFilter: string
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const chain = ffmpeg(inputPath)
+    const videoFilter = drawtextFilter
+      ? `scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2,${drawtextFilter}`
+      : `scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2`;
+
+    ffmpeg(inputPath)
       .seekInput(startTime)
       .duration(duration)
-      .outputOptions([
-        '-preset fast',       // good quality, manageable memory
-        '-crf 23',            // high quality (lower = better, range 0-51)
-        '-vf', `scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2`, // 9:16 portrait for social
-        '-threads 2',         // limit threads to reduce memory spike
-        '-movflags +faststart',
-        '-fs', '50M',         // cap file size to prevent runaway memory
-        '-y',                 // overwrite output
-      ]);
-
-    // Apply captions as a second video filter pass
-    if (drawtextFilter) {
-      chain.complexFilter(
-        `[0:v]scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2[scaled];[scaled]${drawtextFilter}[out]`,
-        ['out']
-      );
-      // Remove the simple -vf since we're using complexFilter
-      chain.outputOptions(chain.outputOptions.toString().replace(',vf,scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2', ''));
-    }
-
-    chain
+      .videoFilter(videoFilter)
+      .audioCodec('aac')
+      .audioBitrate('128k')
+      .videoCodec('libx264')
+      .addOption('-preset', 'fast')
+      .addOption('-crf', '23')
+      .addOption('-pix_fmt', 'yuv420p')
+      .addOption('-threads', '2')
+      .addOption('-movflags', '+faststart')
+      .addOption('-fs', '50M')
       .output(outputPath)
       .on('start', cmd => console.log('[worker] FFmpeg command:', cmd))
       .on('progress', p => console.log(`[worker] FFmpeg progress: ${p.percent?.toFixed(0) ?? '?'}%`))
@@ -238,8 +231,7 @@ function trimAndCaptionVideo(
         console.log('[worker] FFmpeg finished');
         resolve();
       })
-      .on('error', (err, stdout, stderr) => {
-        console.error('[worker] FFmpeg error:', err.message);
+      .on('error', (err, _stdout, stderr) => {
         console.error('[worker] FFmpeg stderr:', stderr);
         reject(new Error(`FFmpeg failed: ${err.message}`));
       })
