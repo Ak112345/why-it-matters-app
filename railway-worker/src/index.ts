@@ -215,6 +215,7 @@ function trimAndCaptionVideo(
         '-vf', `scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2`, // 9:16 portrait for social
         '-threads 2',         // limit threads to reduce memory spike
         '-movflags +faststart',
+        '-fs', '50M',         // cap file size to prevent runaway memory
         '-y',                 // overwrite output
       ]);
 
