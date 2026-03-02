@@ -1,272 +1,228 @@
-import { createClient } from "@supabase/supabase-js";
+// src/production/produceVideo.ts
+// Handles: Whisper caption generation + Railway worker job dispatch
 
-// Use fresh instance to avoid any context/caching issues
-const supabase = createClient(
-  process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || ""
-);
+import OpenAI from 'openai';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
-interface ProduceVideoOptions {
-  analysisIds?: string[];
-  analysisId?: string;
-  batchSize?: number;
-  addSubtitles?: boolean;
-  addHookOverlay?: boolean;
-}
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-interface ProducedVideo {
+const RAILWAY_URL = process.env.RAILWAY_WORKER_URL || 'https://why-it-matters-worker-production.up.railway.app';
+const WORKER_SECRET = process.env.WORKER_SECRET!;
+
+// ─────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────
+
+export interface ProduceJobInput {
   analysisId: string;
-  videoUrl: string;
-  thumbnailUrl: string;
+  source: string;        // 'pexels'
+  sourceId: string;      // e.g. '6462490'
+  startTime: number;
+  endTime: number;
+  hook: string;
+  caption: string;
+  viralityScore: number;
 }
 
-async function resolveLegacyDownloadUrl(
-  source: string,
-  sourceId: string,
-  fallbackUrl: string,
+export interface WordCaption {
+  word: string;
+  start: number;
+  end: number;
+}
+
+export interface ProduceJobResult {
+  success: boolean;
+  videoId?: string;
+  error?: string;
+}
+
+// ─────────────────────────────────────────────
+// Step 1: Resolve Pexels video download URL
+// ─────────────────────────────────────────────
+
+async function resolvePexelsUrl(videoId: string): Promise<string> {
+  const res = await fetch(`https://api.pexels.com/videos/videos/${videoId}`, {
+    headers: { Authorization: process.env.PEXELS_API_KEY! },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Pexels API error ${res.status} for video ${videoId}`);
+  }
+
+  const data = await res.json();
+
+  // Prefer HD, fall back to SD
+  const files: any[] = data.video_files || [];
+  const hd = files.find((f: any) => f.quality === 'hd') ||
+              files.find((f: any) => f.quality === 'sd') ||
+              files[0];
+
+  if (!hd?.link) {
+    throw new Error(`No download URL found for Pexels video ${videoId}`);
+  }
+
+  return hd.link;
+}
+
+// ─────────────────────────────────────────────
+// Step 2: Download clip segment to temp file
+// ─────────────────────────────────────────────
+
+async function downloadClipSegment(
+  url: string,
+  startTime: number,
+  endTime: number
 ): Promise<string> {
-  if (source === 'internet_archive' && sourceId) {
-    return `https://archive.org/download/${sourceId}/${sourceId}.mp4`;
-  }
+  const tmpPath = path.join(os.tmpdir(), `whisper_clip_${Date.now()}.mp4`);
 
-  if (source === 'pexels' && sourceId) {
-    const apiKey = process.env.PEXELS_API_KEY;
-    if (!apiKey) return fallbackUrl;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to download clip: ${res.status}`);
 
-    try {
-      const numericId = sourceId.replace(/^pexels_/, '');
-      const response = await fetch(`https://api.pexels.com/videos/videos/${numericId}`, {
-        headers: { Authorization: apiKey },
-      });
-      if (!response.ok) return fallbackUrl;
+  const buffer = Buffer.from(await res.arrayBuffer());
+  fs.writeFileSync(tmpPath, buffer);
 
-      const data = await response.json() as any;
-      const file = data.video_files?.find(
-        (f: any) => f.quality === 'hd' && f.file_type === 'video/mp4'
-      ) || data.video_files?.find(
-        (f: any) => f.file_type === 'video/mp4'
-      ) || data.video_files?.[0];
-
-      return file?.link || fallbackUrl;
-    } catch {
-      return fallbackUrl;
-    }
-  }
-
-  return fallbackUrl;
+  console.log(`[produceVideo] Downloaded clip to ${tmpPath} (${(buffer.length / 1024 / 1024).toFixed(1)}MB)`);
+  return tmpPath;
 }
 
-export async function produceVideo({
-  analysisId,
-  analysisIds,
-  batchSize = 4,
-  addSubtitles = true,
-  addHookOverlay = true,
-}: ProduceVideoOptions): Promise<ProducedVideo[]> {
-  const workerUrl = process.env.RAILWAY_WORKER_URL;
-  const workerSecret = process.env.WORKER_SECRET;
+// ─────────────────────────────────────────────
+// Step 3: Get word-timed captions from Whisper
+// ─────────────────────────────────────────────
 
-  if (!workerUrl) throw new Error('RAILWAY_WORKER_URL env var is not set');
-  if (!workerSecret) throw new Error('WORKER_SECRET env var is not set');
+async function getWhisperCaptions(clipPath: string): Promise<WordCaption[]> {
+  console.log('[produceVideo] Sending clip to Whisper API...');
 
-  let targetAnalysisIds: string[] = [];
-  if (analysisId) {
-    targetAnalysisIds = [analysisId];
-  } else if (analysisIds && analysisIds.length > 0) {
-    targetAnalysisIds = analysisIds.slice(0, batchSize);
-  } else {
-    // Get analyses to produce - simplest possible approach
-    console.log('[produceVideo] Fetching analyses for production...');
-    
-    const { data: analyses, error: analysisError } = await supabase
-      .from('analysis')
-      .select('id, hook')
-      .limit(batchSize * 10);
+  try {
+    const transcription = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(clipPath),
+      model: 'whisper-1',
+      response_format: 'verbose_json',
+      timestamp_granularities: ['word'],
+    });
 
-    if (analysisError || !analyses) {
-      console.error('[produceVideo] Failed to fetch analyses:', analysisError);
-      throw new Error(`Failed to fetch analyses: ${analysisError?.message || 'Unknown'}`);
+    const words = (transcription as any).words as Array<{
+      word: string;
+      start: number;
+      end: number;
+    }>;
+
+    if (!words || words.length === 0) {
+      console.log('[produceVideo] Whisper returned no words — video may be silent. Using hook as fallback.');
+      return [];
     }
 
-    if (analyses.length === 0) {
-      throw new Error('No analyses available to produce videos');
-    }
+    console.log(`[produceVideo] Whisper returned ${words.length} words`);
 
-    console.log(`[produceVideo] Fetched ${analyses.length} analyses`);
-
-    // Get only real (non-placeholder) analyses
-    const realAnalyses = analyses
-      .filter((row: any) => row.hook && row.hook !== 'Check this out')
-      .slice(0, batchSize);
-    
-    if (realAnalyses.length === 0) {
-      throw new Error('No real analyses available (all are placeholders)');
-    }
-
-    console.log(`[produceVideo] Selected ${realAnalyses.length} real analyses to produce`);
-    targetAnalysisIds = realAnalyses.map((row: any) => row.id);
+    return words.map(w => ({
+      word: w.word.trim(),
+      start: w.start,
+      end: w.end,
+    }));
+  } catch (err: any) {
+    // Non-fatal: if Whisper fails, Railway will use hook text as static caption
+    console.error('[produceVideo] Whisper failed (non-fatal):', err.message);
+    return [];
+  } finally {
+    // Always clean up temp file
+    try { fs.unlinkSync(clipPath); } catch {}
   }
+}
 
-  const { data: analyses, error } = await supabase
-    .from('analysis')
-    .select('id, segment_id, hook, caption, explanation')
-    .in('id', targetAnalysisIds)
-    .limit(batchSize);
+// ─────────────────────────────────────────────
+// Step 4: Dispatch job to Railway worker
+// ─────────────────────────────────────────────
 
-  if (error) {
-    console.error('[produceVideo] Error fetching analyses by ID:', error);
-    throw new Error(`Failed to fetch analyses: ${error.message}`);
-  }
-  if (!analyses || analyses.length === 0) {
-    console.error('[produceVideo] No analyses found for IDs:', targetAnalysisIds);
-    throw new Error('No analyses found for given IDs');
-  }
+async function dispatchToRailway(
+  job: ProduceJobInput,
+  captions: WordCaption[]
+): Promise<ProduceJobResult> {
+  console.log(`[produceVideo] Dispatching job to Railway for analysis ${job.analysisId}`);
 
-  console.log(`[produceVideo] Fetched ${analyses.length} analyses, extracting segment IDs...`);
-  
-  const segmentIds = analyses.map((analysis: any) => analysis.segment_id).filter(Boolean);
-  console.log(`[produceVideo] Found ${segmentIds.length} segment IDs from ${analyses.length} analyses`);
-  
-  if (segmentIds.length === 0) {
-    console.error('[produceVideo] No segment IDs found in analyses!');
-    console.error('[produceVideo] Sample analysis:', analyses[0]);
-    throw new Error('No segment IDs found in analyses');
-  }
+  const payload = {
+    analysisId: job.analysisId,
+    filePath: `pexels://${job.sourceId}`,  // kept for backward compat
+    source: job.source,
+    sourceId: job.sourceId,
+    startTime: job.startTime,
+    endTime: job.endTime,
+    hook: job.hook,
+    caption: job.caption,
+    viralityScore: job.viralityScore,
+    captions,  // word-timed from Whisper (empty array = Railway uses hook text fallback)
+  };
 
-  const { data: segments, error: segmentsError } = await supabase
-    .from('clips_segmented')
-    .select('id, file_path, start_time, end_time, raw_clip_id')
-    .in('id', segmentIds);
+  let attempts = 0;
+  const maxAttempts = 3;
 
-  if (segmentsError) throw new Error(`Failed to fetch segments: ${segmentsError.message}`);
+  while (attempts < maxAttempts) {
+    attempts++;
 
-  console.log(`[produceVideo] Fetched ${segments?.length || 0} segments for ${segmentIds.length} segment IDs`);
+    const res = await fetch(`${RAILWAY_URL}/produce`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-worker-secret': WORKER_SECRET,
+      },
+      body: JSON.stringify(payload),
+    });
 
-  const segmentsById = new Map((segments || []).map((segment: any) => [segment.id, segment]));
-  const rawClipIds = Array.from(
-    new Set((segments || []).map((segment: any) => segment.raw_clip_id).filter(Boolean))
-  );
-
-  console.log(`[produceVideo] Found ${rawClipIds.length} raw clip IDs from segments`);
-
-  const { data: rawClips, error: rawClipsError } = await supabase
-    .from('clips_raw')
-    .select('id, source, source_id')
-    .in('id', rawClipIds);
-
-  if (rawClipsError) throw new Error(`Failed to fetch raw clips: ${rawClipsError.message}`);
-
-  console.log(`[produceVideo] Fetched ${rawClips?.length || 0} raw clips for ${rawClipIds.length} raw clip IDs`);
-
-  const rawClipsById = new Map((rawClips || []).map((rawClip: any) => [rawClip.id, rawClip]));
-
-  const results: ProducedVideo[] = [];
-  let skippedCount = 0;
-
-  for (const analysis of analyses) {
-    const segment = segmentsById.get((analysis as any).segment_id) as any;
-    const rawClip = segment ? rawClipsById.get(segment.raw_clip_id) as any : null;
-
-    if (!segment || !rawClip) {
-      skippedCount++;
-      console.warn(`[produceVideo] Missing segment or raw clip for analysis ${analysis.id}, skipping`);
+    if (res.status === 429) {
+      // Worker busy — wait and retry
+      const retryAfter = parseInt(res.headers.get('retry-after') || '30', 10);
+      console.log(`[produceVideo] Worker busy, retrying in ${retryAfter}s (attempt ${attempts}/${maxAttempts})`);
+      await new Promise(r => setTimeout(r, retryAfter * 1000));
       continue;
     }
 
-    const { source, source_id } = rawClip;
-    const startTime = segment.start_time ?? 0;
-    const endTime = segment.end_time ?? 10;
-    const outputFilePath = `outputs/${analysis.id}.mp4`;
-    const { data: { publicUrl: segmentPublicUrl } } = supabase.storage
-      .from('segmented_clips')
-      .getPublicUrl(segment.file_path || '');
-    let segmentAccessUrl = segmentPublicUrl;
-    if (segment.file_path) {
-      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-        .from('segmented_clips')
-        .createSignedUrl(segment.file_path, 60 * 60);
-      if (!signedUrlError && signedUrlData?.signedUrl) {
-        segmentAccessUrl = signedUrlData.signedUrl;
-      }
-    }
-    segmentAccessUrl = await resolveLegacyDownloadUrl(source, source_id, segmentAccessUrl);
+    const data = await res.json();
 
-    try {
-      console.log(`[produceVideo] Sending job to Railway for analysis ${analysis.id} (${source}/${source_id} ${startTime}s-${endTime}s)`);
-
-      const response = await fetch(`${workerUrl}/produce`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-worker-secret': workerSecret,
-        },
-        body: JSON.stringify({
-          analysisId: analysis.id,
-          // Source info for direct download — no more broken storage URLs
-          source,
-          sourceId: source_id,
-          source_id,
-          startTime,
-          start_time: startTime,
-          endTime,
-          end_time: endTime,
-          // Pexels API key passed through so worker can resolve download URL
-          pexelsApiKey: process.env.PEXELS_API_KEY,
-          pexels_api_key: process.env.PEXELS_API_KEY,
-          segmentUrl: segmentAccessUrl,
-          segment_url: segmentAccessUrl,
-          filePath: outputFilePath,
-          file_path: outputFilePath,
-          hook: analysis.hook ?? 'Watch this.',
-          caption: analysis.caption ?? '',
-          explanation: analysis.explanation ?? '',
-          addSubtitles,
-          add_subtitles: addSubtitles,
-          addHookOverlay,
-          add_hook_overlay: addHookOverlay,
-        }),
-      });
-
-      if (!response.ok) {
-        const err = await response.json() as { error?: string };
-        throw new Error(`Worker error: ${err.error ?? response.status}`);
-      }
-
-      const { videoUrl, thumbnailUrl } = await response.json() as {
-        videoUrl: string;
-        thumbnailUrl: string;
+    if (!res.ok) {
+      return {
+        success: false,
+        error: data.error || `Railway returned HTTP ${res.status}`,
       };
-
-      await supabase.from('videos_final').insert({
-        segment_id: segment.id,
-        analysis_id: analysis.id,
-        file_path: videoUrl,
-        thumbnail_path: thumbnailUrl,
-        has_subtitles: addSubtitles,
-        status: 'drafted',
-        produced_at: new Date().toISOString(),
-        production_settings: { addSubtitles, addHookOverlay, workerUrl },
-      });
-
-      results.push({ analysisId: analysis.id, videoUrl, thumbnailUrl });
-      console.log(`[produceVideo] ✓ Done: ${analysis.id}`);
-
-    } catch (err: any) {
-      console.error(`[produceVideo] ✗ Failed for ${analysis.id}:`, err.message);
-      try {
-        await supabase.from('videos_final').insert({
-          segment_id: segment.id,
-          analysis_id: analysis.id,
-          file_path: '',
-          status: 'error',
-          error_message: err.message,
-        });
-      } catch (dbErr: any) {
-        console.error('[produceVideo] Failed to write error row to videos_final:', dbErr?.message || dbErr);
-      }
     }
+
+    return {
+      success: true,
+      videoId: data.videoId || data.jobId,
+    };
   }
 
-  console.log(`[produceVideo] Completed: ${results.length} produced, ${skippedCount} skipped, ${analyses.length} total`);
-  return results;
+  return { success: false, error: 'Worker busy after max retries' };
+}
+
+// ─────────────────────────────────────────────
+// Main export
+// ─────────────────────────────────────────────
+
+export async function produceVideo(job: ProduceJobInput): Promise<ProduceJobResult> {
+  console.log(`[produceVideo] Starting production for analysis ${job.analysisId}`);
+
+  try {
+    // 1. Resolve Pexels download URL
+    const pexelsUrl = await resolvePexelsUrl(job.sourceId);
+
+    // 2. Download the segment for Whisper
+    const tmpClipPath = await downloadClipSegment(pexelsUrl, job.startTime, job.endTime);
+
+    // 3. Get word-timed captions (non-blocking — falls back gracefully)
+    const captions = await getWhisperCaptions(tmpClipPath);
+
+    // 4. Send job + captions to Railway worker
+    const result = await dispatchToRailway(job, captions);
+
+    if (result.success) {
+      console.log(`[produceVideo] Job dispatched successfully. Video ID: ${result.videoId}`);
+    } else {
+      console.error(`[produceVideo] Job failed: ${result.error}`);
+    }
+
+    return result;
+  } catch (err: any) {
+    console.error('[produceVideo] Unexpected error:', err);
+    return { success: false, error: err.message };
+  }
 }
