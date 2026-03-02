@@ -1,0 +1,8 @@
+[phases.install]
+cmds = ["cd railway-worker && npm install"]
+
+[phases.build]
+cmds = ["cd railway-worker && npm run build"]
+
+[start]
+cmd = "cd railway-worker && npm start"
