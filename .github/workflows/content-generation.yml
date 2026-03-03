@@ -30,9 +30,9 @@ jobs:
           echo "=== FILES HERE ==="
           ls -lah
           set -e
-          curl -fsS "${{ secrets.VERCEL_PRODUCTION_URL }}/api/content/generate?secret=${{ secrets.VERCEL_CRON_SECRET }}"
+          curl -fsS "${{ secrets.VERCEL_PRODUCTION_URL }}/api/content/generate"
       - name: Trigger YouTube post
         if: github.event.schedule == '59 10 * * *' || github.event_name == 'workflow_dispatch'
         run: |
           set -e
-          curl -fsS "${{ secrets.VERCEL_PRODUCTION_URL }}/api/publish/cron?secret=${{ secrets.VERCEL_CRON_SECRET }}"
+          curl -fsS "${{ secrets.VERCEL_PRODUCTION_URL }}/api/publish/cron"
