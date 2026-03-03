@@ -5,8 +5,13 @@ import OpenAI from 'openai';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { createClient } from '@supabase/supabase-js';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let _openai: OpenAI | null = null;
+function getOpenAI() {
+  if (!_openai) _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return _openai;
+}
 
 const RAILWAY_URL = process.env.RAILWAY_WORKER_URL || 'https://why-it-matters-worker-production.up.railway.app';
 const WORKER_SECRET = process.env.WORKER_SECRET!;
@@ -95,7 +100,7 @@ async function getWhisperCaptions(clipPath: string): Promise<WordCaption[]> {
   console.log('[produceVideo] Sending clip to Whisper API...');
 
   try {
-    const transcription = await openai.audio.transcriptions.create({
+    const transcription = await getOpenAI().audio.transcriptions.create({
       file: fs.createReadStream(clipPath),
       model: 'whisper-1',
       response_format: 'verbose_json',
@@ -225,4 +230,107 @@ export async function produceVideo(job: ProduceJobInput): Promise<ProduceJobResu
     console.error('[produceVideo] Unexpected error:', err);
     return { success: false, error: err.message };
   }
+}
+
+// ─────────────────────────────────────────────
+// Batch export (used by /api/content/generate, /api/produce, /api/content/post-now)
+// ─────────────────────────────────────────────
+
+export interface ProduceVideoBatchOptions {
+  analysisIds?: string[];
+  batchSize?: number;
+  addSubtitles?: boolean;
+  addHookOverlay?: boolean;
+}
+
+export async function produceVideoBatch(
+  options: ProduceVideoBatchOptions = {}
+): Promise<ProduceJobResult[]> {
+  const { analysisIds, batchSize = 4 } = options;
+
+  const supabase = createClient(
+    process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
+    process.env.SUPABASE_SERVICE_ROLE_KEY || 'placeholder'
+  );
+
+  // Find analyses that haven't been turned into videos yet
+  let query = supabase
+    .from('analysis')
+    .select(`
+      id,
+      hook,
+      caption,
+      virality_score,
+      clips_segmented:segment_id (
+        id,
+        start_time,
+        end_time,
+        clips_raw:raw_clip_id (
+          source,
+          source_id
+        )
+      )
+    `)
+    .order('analyzed_at', { ascending: false })
+    .limit(batchSize);
+
+  if (analysisIds && analysisIds.length > 0) {
+    query = query.in('id', analysisIds);
+  }
+
+  const { data: analyses, error } = await query;
+  if (error) {
+    console.error('[produceVideoBatch] Failed to fetch analyses:', error.message);
+    return [];
+  }
+  if (!analyses || analyses.length === 0) {
+    console.log('[produceVideoBatch] No analyses found to produce');
+    return [];
+  }
+
+  // Filter out analyses already linked to a produced video
+  const { data: existing } = await supabase
+    .from('videos_final')
+    .select('analysis_id')
+    .in('analysis_id', analyses.map((a: any) => a.id));
+
+  const producedAnalysisIds = new Set((existing || []).map((v: any) => v.analysis_id));
+  const toProcess = analyses.filter((a: any) => !producedAnalysisIds.has(a.id));
+
+  if (toProcess.length === 0) {
+    console.log('[produceVideoBatch] All analyses already produced');
+    return [];
+  }
+
+  console.log(`[produceVideoBatch] Processing ${toProcess.length} analyses...`);
+  const results: ProduceJobResult[] = [];
+
+  for (const a of toProcess) {
+    const seg = Array.isArray(a.clips_segmented) ? a.clips_segmented[0] : a.clips_segmented;
+    const raw = seg
+      ? (Array.isArray(seg.clips_raw) ? seg.clips_raw[0] : seg.clips_raw)
+      : null;
+
+    if (!seg || !raw) {
+      console.warn(`[produceVideoBatch] Skipping analysis ${a.id}: missing segment or raw clip data`);
+      results.push({ success: false, error: 'Missing segment/raw clip data' });
+      continue;
+    }
+
+    const job: ProduceJobInput = {
+      analysisId: a.id,
+      source: raw.source || 'pexels',
+      sourceId: String(raw.source_id),
+      startTime: seg.start_time ?? 0,
+      endTime: seg.end_time ?? 30,
+      hook: a.hook || '',
+      caption: a.caption || '',
+      viralityScore: a.virality_score ?? 5,
+    };
+
+    const result = await produceVideo(job);
+    results.push(result);
+  }
+
+  return results;
 }

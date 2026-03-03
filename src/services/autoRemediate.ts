@@ -3,7 +3,11 @@ import { createClient } from '@supabase/supabase-js';
 import { Database } from '../types/database';
 import { ENV } from '../utils/env';
 
-const openai = new OpenAI({ apiKey: ENV.OPENAI_API_KEY });
+let _openai: OpenAI | null = null;
+function getOpenAI() {
+  if (!_openai) _openai = new OpenAI({ apiKey: ENV.OPENAI_API_KEY });
+  return _openai;
+}
 const supabase = createClient<Database>(ENV.SUPABASE_URL || "https://placeholder.supabase.co", ENV.SUPABASE_SERVICE_ROLE_KEY || "placeholder");
 
 export interface ErrorContext {
@@ -29,7 +33,7 @@ export interface RemediationResult {
 export async function analyzeAndRemediateError(error: ErrorContext): Promise<RemediationResult> {
   try {
     // Use GPT-4 to analyze the error and suggest remediation
-    const analysis = await openai.chat.completions.create({
+    const analysis = await getOpenAI().chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
         {
@@ -417,7 +421,7 @@ async function updateCaptionSafe(videoId: string): Promise<void> {
   
   const currentCaption = analysis?.caption || '';
   
-  const sanitized = await openai.chat.completions.create({
+  const sanitized = await getOpenAI().chat.completions.create({
     model: 'gpt-4o-mini',
     messages: [
       {

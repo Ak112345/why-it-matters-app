@@ -6,7 +6,7 @@ import { NextResponse } from 'next/server';
 import { ingestClips } from '../../../../src/ingestion/ingestClips';
 import { segmentClips } from '../../../../src/ingestion/segmentClips';
 import { analyzeClip } from '../../../../src/analysis/analyzeClip';
-import { produceVideo } from '../../../../src/production/produceVideo';
+import { produceVideoBatch } from '../../../../src/production/produceVideo';
 import { queueVideos } from '../../../../src/distribution/queueVideos';
 import { contentCalendar } from '../../../../src/intelligence/contentCalendar';
 import { supabase } from '../../../../src/utils/supabaseClient';
@@ -225,7 +225,7 @@ export async function GET() {
     // Step 4: Produce videos
     try {
       console.log('[DAILY CONTENT] Step 4: Producing videos...');
-      const videos = await produceVideo({
+      const videos = await produceVideoBatch({
         analysisIds,
         batchSize: 4, // Produce 4 videos daily (2 per platform for 2x daily)
         addSubtitles: true,

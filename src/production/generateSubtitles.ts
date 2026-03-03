@@ -9,9 +9,11 @@ import path from 'path';
 import OpenAI from 'openai';
 import { createReadStream } from 'fs';
 
-const openai = new OpenAI({
-  apiKey: ENV.OPENAI_API_KEY,
-});
+let _openai: OpenAI | null = null;
+function getOpenAI() {
+  if (!_openai) _openai = new OpenAI({ apiKey: ENV.OPENAI_API_KEY });
+  return _openai;
+}
 
 /**
  * Convert SRT timestamp format
@@ -70,7 +72,7 @@ export async function generateSubtitles(
 
     // Transcribe using OpenAI Whisper
     console.log('Transcribing audio...');
-    const transcription = await openai.audio.transcriptions.create({
+    const transcription = await getOpenAI().audio.transcriptions.create({
       file: createReadStream(audioPath),
       model: 'whisper-1',
       response_format: 'verbose_json',

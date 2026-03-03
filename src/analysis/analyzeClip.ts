@@ -8,10 +8,11 @@ import { ENV } from '../utils/env';
 import { directorApproveContent } from '../content-management/contentDirector';
 import OpenAI from 'openai';
 
-const openai = new OpenAI({
-  apiKey: ENV.OPENAI_API_KEY,
-  project: ENV.OPENAI_PROJECT_ID || undefined,
-});
+let _openai: OpenAI | null = null;
+function getOpenAI() {
+  if (!_openai) _openai = new OpenAI({ apiKey: ENV.OPENAI_API_KEY, project: ENV.OPENAI_PROJECT_ID || undefined });
+  return _openai;
+}
 
 export interface AnalysisResult {
   hook: string;
@@ -134,7 +135,7 @@ Return JSON with these keys:
 
   try {
     console.log(`[generateAnalysis] Calling OpenAI for segment ${segmentId}...`);
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: 'You are an expert viral content creator. Always respond with valid JSON. Never use generic placeholder text.' },
