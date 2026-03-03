@@ -116,12 +116,14 @@ app.get('/debug', (_req, res) => {
 // ─────────────────────────────────────────────
 
 async function resolvePexelsUrl(videoId: string): Promise<string> {
-  const res = await fetch(`https://api.pexels.com/videos/videos/${videoId}`, {
+  const normalizedId = String(videoId).replace(/^pexels_/i, '').match(/\d+/)?.[0] || String(videoId);
+
+  const res = await fetch(`https://api.pexels.com/videos/videos/${normalizedId}`, {
     headers: { Authorization: PEXELS_API_KEY },
   });
 
   if (!res.ok) {
-    throw new Error(`Pexels API error ${res.status} for video ${videoId}`);
+    throw new Error(`Pexels API error ${res.status} for video ${videoId} (normalized: ${normalizedId})`);
   }
 
   const data: any = await res.json();
@@ -264,7 +266,38 @@ async function saveVideoRecord(
   caption: string,
   viralityScore: number
 ): Promise<void> {
-  const { error } = await supabase
+  const nowIso = new Date().toISOString();
+
+  const { data: analysisRow, error: analysisError } = await supabase
+    .from('analysis')
+    .select('segment_id')
+    .eq('id', analysisId)
+    .single();
+
+  if (analysisError || !analysisRow?.segment_id) {
+    throw new Error(`Failed to resolve segment_id for analysis ${analysisId}: ${analysisError?.message || 'missing segment_id'}`);
+  }
+
+  const { error: finalError } = await supabase
+    .from('videos_final')
+    .insert({
+      id: videoId,
+      analysis_id: analysisId,
+      segment_id: analysisRow.segment_id,
+      file_path: videoUrl,
+      status: 'ready',
+      has_subtitles: true,
+      produced_at: nowIso,
+      created_at: nowIso,
+      updated_at: nowIso,
+    });
+
+  if (finalError) {
+    throw new Error(`Supabase insert to videos_final failed: ${finalError.message}`);
+  }
+
+  // Best-effort legacy compatibility record (non-blocking)
+  await supabase
     .from('produced_videos')
     .insert({
       id: videoId,
@@ -275,10 +308,8 @@ async function saveVideoRecord(
       caption,
       virality_score: viralityScore,
       platforms_posted: [],
-      created_at: new Date().toISOString(),
+      created_at: nowIso,
     });
-
-  if (error) throw new Error(`Supabase insert failed: ${error.message}`);
 }
 
 // ─────────────────────────────────────────────

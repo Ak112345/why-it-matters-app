@@ -225,24 +225,34 @@ export async function GET() {
     // Step 4: Produce videos
     try {
       console.log('[DAILY CONTENT] Step 4: Producing videos...');
-      const videos = await produceVideo({
+      const produceResult = await produceVideo({
         analysisIds,
-        batchSize: 4, // Produce 4 videos daily (2 per platform for 2x daily)
+        batchSize: 2, // Produce 2 videos per batch to be gentle on system
+        delayBetweenBatches: 5000, // 5 seconds between batches
         addSubtitles: true,
         addHookOverlay: true,
       });
       
+      // produceResult is now Produ ceJobResult[] (always an array from batch mode)
+      const videos = Array.isArray(produceResult) ? produceResult : [produceResult];
+      const successCount = videos.filter(v => v.success).length;
+      
       results.push({
         stage: 'produce',
-        success: true,
-        count: videos.length,
-        data: videos,
+        success: successCount > 0,
+        count: successCount,
+        data: {
+          produced: successCount,
+          attempted: videos.length,
+          results: videos,
+        },
       });
 
-      console.log(`[DAILY CONTENT] ✓ Produced ${videos.length} videos`);
+      console.log(`[DAILY CONTENT] ✓ Produced ${successCount}/${videos.length} videos`);
 
-      if (videos.length === 0) {
-        throw new Error('No videos were produced');
+      if (successCount === 0 && videos.length > 0) {
+        // Some attempts were made but all failed - don't throw, log only
+        console.warn('[DAILY CONTENT] ⚠ All production attempts failed, but continuing to queue stage');
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';

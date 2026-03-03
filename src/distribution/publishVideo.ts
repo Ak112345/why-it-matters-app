@@ -30,6 +30,79 @@ export interface PublishResult {
   error?: string;
 }
 
+function extractStoragePathFromUrl(videoUrl: string, bucket: string): string | null {
+  if (!videoUrl) return null;
+
+  const decoded = decodeURIComponent(videoUrl);
+  const patterns = [
+    `/storage/v1/object/public/${bucket}/`,
+    `/storage/v1/object/authenticated/${bucket}/`,
+    `/storage/v1/object/sign/${bucket}/`,
+  ];
+
+  for (const pattern of patterns) {
+    const index = decoded.indexOf(pattern);
+    if (index >= 0) {
+      return decoded.substring(index + pattern.length).split('?')[0];
+    }
+  }
+
+  if (decoded.startsWith(`${bucket}/`)) {
+    return decoded.substring(bucket.length + 1).split('?')[0];
+  }
+
+  return null;
+}
+
+async function moveVideoToPostedBucket(videoId: string, videoUrl: string): Promise<{ moved: boolean; storageUri?: string; error?: string }> {
+  const sourceBucket = 'final_videos';
+  const targetBucket = process.env.POSTED_VIDEOS_BUCKET || 'videos_already_posted';
+
+  if (targetBucket === sourceBucket) {
+    return { moved: false, error: 'POSTED_VIDEOS_BUCKET matches source bucket; skipping move' };
+  }
+
+  const sourcePath = extractStoragePathFromUrl(videoUrl, sourceBucket);
+  if (!sourcePath) {
+    return { moved: false, error: 'Could not parse source storage path from video URL' };
+  }
+
+  const extension = sourcePath.includes('.') ? sourcePath.split('.').pop() : 'mp4';
+  const targetPath = `${new Date().toISOString().slice(0, 10)}/${videoId}.${extension}`;
+
+  const { data: fileBlob, error: downloadError } = await supabase.storage
+    .from(sourceBucket)
+    .download(sourcePath);
+
+  if (downloadError || !fileBlob) {
+    return { moved: false, error: `Download failed: ${downloadError?.message || 'no file returned'}` };
+  }
+
+  const { error: uploadError } = await supabase.storage
+    .from(targetBucket)
+    .upload(targetPath, fileBlob, {
+      contentType: 'video/mp4',
+      upsert: true,
+    });
+
+  if (uploadError) {
+    return { moved: false, error: `Upload failed: ${uploadError.message}` };
+  }
+
+  const { error: removeError } = await supabase.storage
+    .from(sourceBucket)
+    .remove([sourcePath]);
+
+  if (removeError) {
+    console.warn(`[publish] Video copied to ${targetBucket} but source removal failed: ${removeError.message}`);
+  }
+
+  return {
+    moved: true,
+    storageUri: `storage://${targetBucket}/${targetPath}`,
+  };
+}
+
 // ─────────────────────────────────────────────
 // TikTok (Storage for manual batch scheduling)
 // ─────────────────────────────────────────────
@@ -315,8 +388,7 @@ async function refreshMetaPageToken(): Promise<string> {
   try {
     // Try to get fresh page access token from user token
     const res = await fetch(
-      `https://graph.facebook.com/v19.0/${pageId}?fields=access_token,name&access_token=${userToken}`,
-      { timeout: 5000 }
+      `https://graph.facebook.com/v19.0/${pageId}?fields=access_token,name&access_token=${userToken}`
     );
 
     const data = await res.json();
@@ -609,14 +681,47 @@ async function publishSingleVideo(
         })
         .eq('id', queueId);
     } else {
+      const nowIso = new Date().toISOString();
+
       await supabase
         .from('posting_queue')
         .update({
           status: result.success ? 'posted' : 'failed',
+          posted_at: result.success ? nowIso : null,
           error_message: result.error || null,
-          updated_at: new Date().toISOString(),
+          updated_at: nowIso,
         })
         .eq('id', queueId);
+
+      if (result.success) {
+        const { data: existingVideo } = await supabase
+          .from('videos_final')
+          .select('times_posted, file_path')
+          .eq('id', video.id)
+          .single();
+
+        let updatedFilePath: string | undefined;
+        const currentVideoPath = existingVideo?.file_path || video.file_path;
+        const moveResult = await moveVideoToPostedBucket(video.id, currentVideoPath);
+        if (moveResult.moved && moveResult.storageUri) {
+          updatedFilePath = moveResult.storageUri;
+          console.log(`[publish] Moved video ${video.id} to posted bucket`);
+        } else if (moveResult.error) {
+          console.warn(`[publish] Could not move video ${video.id} to posted bucket: ${moveResult.error}`);
+        }
+
+        const currentTimesPosted = existingVideo?.times_posted ?? 0;
+        await supabase
+          .from('videos_final')
+          .update({
+            times_posted: currentTimesPosted + 1,
+            last_posted_at: nowIso,
+            status: 'posted',
+            ...(updatedFilePath ? { file_path: updatedFilePath } : {}),
+            updated_at: nowIso,
+          })
+          .eq('id', video.id);
+      }
     }
 
     return {

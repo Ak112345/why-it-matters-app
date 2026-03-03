@@ -43,12 +43,14 @@ export interface ProduceJobResult {
 // ─────────────────────────────────────────────
 
 async function resolvePexelsUrl(videoId: string): Promise<string> {
-  const res = await fetch(`https://api.pexels.com/videos/videos/${videoId}`, {
+  const normalizedId = String(videoId).replace(/^pexels_/i, '').match(/\d+/)?.[0] || String(videoId);
+
+  const res = await fetch(`https://api.pexels.com/videos/videos/${normalizedId}`, {
     headers: { Authorization: process.env.PEXELS_API_KEY! },
   });
 
   if (!res.ok) {
-    throw new Error(`Pexels API error ${res.status} for video ${videoId}`);
+    throw new Error(`Pexels API error ${res.status} for video ${videoId} (normalized: ${normalizedId})`);
   }
 
   const data = await res.json();
@@ -195,10 +197,10 @@ async function dispatchToRailway(
 }
 
 // ─────────────────────────────────────────────
-// Main export
+// Main exports (single job + batch)
 // ─────────────────────────────────────────────
 
-export async function produceVideo(job: ProduceJobInput): Promise<ProduceJobResult> {
+async function produceSingleVideo(job: ProduceJobInput): Promise<ProduceJobResult> {
   console.log(`[produceVideo] Starting production for analysis ${job.analysisId}`);
 
   try {
@@ -224,5 +226,165 @@ export async function produceVideo(job: ProduceJobInput): Promise<ProduceJobResu
   } catch (err: any) {
     console.error('[produceVideo] Unexpected error:', err);
     return { success: false, error: err.message };
+  }
+}
+
+// Batch production interface
+export interface BatchProduceInput {
+  analysisIds?: string[];  // Array of analysis IDs to produce
+  batchSize?: number;      // How many to process per batch (default: 2)
+  delayBetweenBatches?: number; // ms delay between batches (default: 5000)
+  addSubtitles?: boolean;  // For API compatibility
+  addHookOverlay?: boolean; // For API compatibility
+}
+
+export async function produceVideoBatch(
+  options: BatchProduceInput
+): Promise<ProduceJobResult[]> {
+  const {
+    analysisIds = [],
+    batchSize = 2,
+    delayBetweenBatches = 5000,
+  } = options;
+
+  console.log(`[produceVideo] Batch production: ${analysisIds.length} videos, batch size ${batchSize}`);
+
+  if (analysisIds.length === 0) {
+    console.log('[produceVideo] No analysis IDs provided');
+    return [];
+  }
+
+  // Import Supabase here to avoid circular dependencies
+  const { createClient } = await import('@supabase/supabase-js');
+  const supabase = createClient(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  const results: ProduceJobResult[] = [];
+  
+  // Process in batches
+  for (let i = 0; i < analysisIds.length; i += batchSize) {
+    const batch = analysisIds.slice(i, i + batchSize);
+    const batchNum = Math.floor(i / batchSize) + 1;
+    const totalBatches = Math.ceil(analysisIds.length / batchSize);
+
+    console.log(`[produceVideo] Processing batch ${batchNum}/${totalBatches} (${batch.length} videos)`);
+
+    // Fetch analysis data for this batch
+    const { data: analysisRecords, error: fetchError } = await supabase
+      .from('analysis')
+      .select(`
+        id,
+        hook,
+        caption,
+        segment_id,
+        virality_score
+      `)
+      .in('id', batch);
+
+    if (fetchError) {
+      console.error(`[produceVideo] Error fetching analysis for batch ${batchNum}:`, fetchError);
+      batch.forEach(id => {
+        results.push({
+          success: false,
+          error: `Failed to fetch analysis: ${fetchError.message}`,
+        });
+      });
+      // Continue with next batch even if this one fails
+      if (i + batchSize < analysisIds.length) {
+        console.log(`[produceVideo] Waiting ${delayBetweenBatches}ms before next batch...`);
+        await new Promise(r => setTimeout(r, delayBetweenBatches));
+      }
+      continue;
+    }
+
+    // Process each analysis in the batch
+    for (const analysis of analysisRecords || []) {
+      // Fetch segment data (contains source, sourceId, startTime, endTime, caption)
+      const { data: segments, error: segError } = await supabase
+        .from('clips_segmented')
+        .select(`
+          id,
+          raw_clip_id,
+          start_time,
+          end_time
+        `)
+        .eq('id', analysis.segment_id)
+        .limit(1);
+
+      if (segError || !segments || segments.length === 0) {
+        console.error(`[produceVideo] Error fetching segment for analysis ${analysis.id}:`, segError);
+        results.push({
+          success: false,
+          error: `Failed to fetch segment: ${segError?.message || 'Not found'}`,
+        });
+        continue;
+      }
+
+      const segment = segments[0];
+      let source = 'pexels';
+      let sourceId = '';
+
+      if (segment.raw_clip_id) {
+        const { data: rawClip } = await supabase
+          .from('clips_raw')
+          .select('source, source_id')
+          .eq('id', segment.raw_clip_id)
+          .single();
+
+        source = rawClip?.source || source;
+        sourceId = rawClip?.source_id || sourceId;
+      }
+
+      // Build job
+      const job: ProduceJobInput = {
+        analysisId: analysis.id,
+        source,
+        sourceId,
+        startTime: segment.start_time || 0,
+        endTime: segment.end_time || 10,
+        hook: analysis.hook || '',
+        caption: analysis.caption || '',
+        viralityScore: analysis.virality_score || 0,
+      };
+
+      // Produce this video
+      const result = await produceSingleVideo(job);
+      results.push(result);
+
+      // Small delay between individual videos within batch (2 seconds)
+      if (analysisRecords && analysisRecords.indexOf(analysis) < analysisRecords.length - 1) {
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+
+    // Delay between batches (only if more batches remain)
+    if (i + batchSize < analysisIds.length) {
+      console.log(`[produceVideo] Batch ${batchNum} complete. Waiting ${delayBetweenBatches}ms before next batch...`);
+      await new Promise(r => setTimeout(r, delayBetweenBatches));
+    }
+  }
+
+  const successCount = results.filter(r => r.success).length;
+  console.log(`[produceVideo] Batch complete: ${successCount}/${analysisIds.length} succeeded`);
+  
+  return results;
+}
+
+// Main export — auto-detects single job vs batch
+export async function produceVideo(
+  input: ProduceJobInput | BatchProduceInput
+): Promise<ProduceJobResult | ProduceJobResult[]> {
+  // Check if this is a batch request (has analysisIds) or single job (has analysisId)
+  if ('analysisIds' in input) {
+    // Batch mode
+    return produceVideoBatch(input as BatchProduceInput);
+  } else if ('analysisId' in input) {
+    // Single job mode
+    return produceSingleVideo(input as ProduceJobInput);
+  } else {
+    // Batch mode with just the options
+    return produceVideoBatch(input as BatchProduceInput);
   }
 }

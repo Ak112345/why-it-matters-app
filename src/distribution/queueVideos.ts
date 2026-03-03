@@ -187,7 +187,7 @@ async function queueSingleVideo(
       const { data: existing } = await supabase
         .from('posting_queue')
         .select('id')
-        .eq('video_id', videoId)
+        .eq('final_video_id', videoId)
         .eq('platform', platform)
         .single();
 
@@ -295,13 +295,22 @@ export async function queueVideos(options: QueueVideoOptions = {}): Promise<Queu
       throw fetchError;
     }
 
-    if (!videos || videos.length === 0) {
+    const { data: postedQueue } = await supabase
+      .from('posting_queue')
+      .select('final_video_id')
+      .eq('status', 'posted')
+      .not('final_video_id', 'is', null);
+
+    const postedVideoIds = new Set((postedQueue || []).map(q => q.final_video_id));
+    const unpostedVideos = (videos || []).filter(v => !postedVideoIds.has(v.id));
+
+    if (!unpostedVideos || unpostedVideos.length === 0) {
       console.log('No videos found to queue');
       return results;
     }
-    console.log(`Found ${videos.length} videos to check for queueing`);
+    console.log(`Found ${unpostedVideos.length} videos to check for queueing`);
 
-    for (const video of videos) {
+    for (const video of unpostedVideos) {
       try {
         const result = await queueSingleVideo(video.id, platforms, scheduledTime, minHoursBetweenPosts);
         results.push(result);

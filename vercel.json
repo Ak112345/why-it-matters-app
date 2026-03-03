@@ -9,8 +9,16 @@
       "schedule": "0 6,14,22 * * *"
     },
     {
+      "path": "/api/produce",
+      "schedule": "*/30 * * * *"
+    },
+    {
       "path": "/api/publish/cron",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/queue/archive-posted",
+      "schedule": "0 3 * * *"
     },
     {
       "path": "/api/tokens/monitor",

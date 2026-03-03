@@ -8,16 +8,15 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { publishVideo, type PublishResult } from '../../../../src/distribution/publishVideo';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    console.log('[CRON] Starting automated publishing check...');
+    const authHeader = request.headers.get('authorization');
+    const cronSecret = process.env.CRON_SECRET || process.env.VERCEL_CRON_SECRET;
+    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
-    const t = process.env.FACEBOOK_PAGE_ACCESS_TOKEN ?? '';
-    console.log('IG TOKEN', {
-      len: t.length,
-      start: t.slice(0, 6),
-      end: t.slice(-6),
-    });
+    console.log('[CRON] Starting automated publishing check...');
 
     // Publish all pending posts that are due
     const results: PublishResult[] = await publishVideo({

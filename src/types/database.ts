@@ -687,11 +687,13 @@ export type Database = {
           file_path: string
           has_subtitles: boolean | null
           id: string
+          last_posted_at: string | null
           produced_at: string | null
           production_settings: Json | null
           segment_id: string
           status: string | null
           thumbnail_path: string | null
+          times_posted: number | null
           updated_at: string | null
         }
         Insert: {
@@ -702,11 +704,13 @@ export type Database = {
           file_path: string
           has_subtitles?: boolean | null
           id?: string
+          last_posted_at?: string | null
           produced_at?: string | null
           production_settings?: Json | null
           segment_id: string
           status?: string | null
           thumbnail_path?: string | null
+          times_posted?: number | null
           updated_at?: string | null
         }
         Update: {
@@ -717,11 +721,13 @@ export type Database = {
           file_path?: string
           has_subtitles?: boolean | null
           id?: string
+          last_posted_at?: string | null
           produced_at?: string | null
           production_settings?: Json | null
           segment_id?: string
           status?: string | null
           thumbnail_path?: string | null
+          times_posted?: number | null
           updated_at?: string | null
         }
         Relationships: [
