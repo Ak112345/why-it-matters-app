@@ -9,34 +9,9 @@ jobs:
   process-pending:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "18"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Diagnostics
+      - name: Trigger pending analysis via API
         run: |
-          echo "=== BASIC ==="
-          uname -a
-          echo "=== DISK ==="
-          df -h
-          echo "=== MEMORY ==="
-          free -h || true
-          echo "=== FFMPEG ==="
-          which ffmpeg || true
-          ffmpeg -version || true
-          echo "=== FILES HERE ==="
-          ls -lah
-
-      - name: Run worker script
-        env:
-          SUPABASE_URL: https://aiwijowbfdfcfivrmrao.supabase.co
-          SUPABASE_SERVICE_ROLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFpd2lqb3diZmRmY2ZpdnJtcmFvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTE3OTk3NiwiZXhwIjoyMDg2NzU1OTc2fQ.K4SVaD7KTTMYA7pZIPqNhacbDRpa0V-w9hLg4Zl4C_A
-        run: npx ts-node scripts/process-pending-analysis
+          echo "[$(date -u)] Triggering pending analysis processing..."
+          curl -fsS --max-time 60 \
+            "${{ secrets.VERCEL_PRODUCTION_URL }}/api/analyze?secret=${{ secrets.VERCEL_CRON_SECRET }}" \
+            || echo "Analysis endpoint returned non-200 (may be no pending items)"

@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ingestClips } from '../../../../src/ingestion/ingestClips';
 import { segmentClips } from '../../../../src/ingestion/segmentClips';
 import { analyzeClip } from '../../../../src/analysis/analyzeClip';
-import { produceVideo } from '../../../../src/production/produceVideo';
+import { produceVideoBatch } from '../../../../src/production/produceVideo';
 import { queueVideos } from '../../../../src/distribution/queueVideos';
 import { publishVideo } from '../../../../src/distribution/publishVideo';
 import { contentCalendar } from '../../../../src/intelligence/contentCalendar';
@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
     let producedVideos;
     try {
       console.log('[POST NOW] 4/6: Producing videos...');
-      producedVideos = await produceVideo({
+      producedVideos = await produceVideoBatch({
         analysisIds,
         batchSize: 1, // Just produce 1 video for immediate posting
         addSubtitles: true,

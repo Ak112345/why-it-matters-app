@@ -6,6 +6,17 @@ interface QueueStats {
   pending: number;
   posted: number;
   failed: number;
+  total?: number;
+  data?: {
+    summary?: {
+      total: number;
+      pending: number;
+      posted: number;
+      failed: number;
+      readyToPost: number;
+    };
+    byPlatform?: Record<string, { total: number; pending: number; failed: number; posted: number }>;
+  };
 }
 
 export default function AdminPage() {
@@ -13,6 +24,8 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [publishResult, setPublishResult] = useState<any>(null);
   const [publishingNow, setPublishingNow] = useState(false);
+  const [bulkFinalizing, setBulkFinalizing] = useState(false);
+  const [bulkResult, setBulkResult] = useState<any>(null);
 
   useEffect(() => {
     fetchQueueStats();
@@ -22,7 +35,7 @@ export default function AdminPage() {
 
   const fetchQueueStats = async () => {
     try {
-      const res = await fetch('/api/queue/stats');
+      const res = await fetch('/api/queue/stats', { cache: 'no-store' });
       const data = await res.json();
       setQueueStats(data);
       setLoading(false);
@@ -59,6 +72,24 @@ export default function AdminPage() {
       setTimeout(fetchQueueStats, 5000);
     } catch (err: any) {
       alert('Error: ' + err.message);
+    }
+  };
+
+  const triggerBulkFinalize = async () => {
+    const confirmed = confirm('Bulk finalize up to 20 clips? This will produce videos from the backlog and queue them for all platforms.');
+    if (!confirmed) return;
+
+    setBulkFinalizing(true);
+    setBulkResult(null);
+    try {
+      const res = await fetch('/api/content/bulk-finalize?batchSize=20');
+      const data = await res.json();
+      setBulkResult(data);
+      setTimeout(fetchQueueStats, 3000);
+    } catch (err: any) {
+      setBulkResult({ success: false, error: err.message });
+    } finally {
+      setBulkFinalizing(false);
     }
   };
 
@@ -205,6 +236,44 @@ export default function AdminPage() {
               Update queue statistics
             </div>
           </button>
+
+          {/* Bulk Finalize Card */}
+          <button
+            onClick={triggerBulkFinalize}
+            disabled={bulkFinalizing}
+            style={{
+              background: bulkFinalizing ? '#d97706' : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+              border: 'none',
+              borderRadius: '16px',
+              padding: '32px',
+              color: 'white',
+              cursor: bulkFinalizing ? 'wait' : 'pointer',
+              boxShadow: '0 10px 30px rgba(245, 158, 11, 0.3)',
+              transition: 'all 0.3s ease',
+              textAlign: 'left',
+              transform: bulkFinalizing ? 'scale(0.98)' : 'scale(1)',
+            }}
+            onMouseOver={(e) => {
+              if (!bulkFinalizing) {
+                e.currentTarget.style.transform = 'scale(1.02)';
+                e.currentTarget.style.boxShadow = '0 15px 40px rgba(245, 158, 11, 0.4)';
+              }
+            }}
+            onMouseOut={(e) => {
+              if (!bulkFinalizing) {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.boxShadow = '0 10px 30px rgba(245, 158, 11, 0.3)';
+              }
+            }}
+          >
+            <div style={{ fontSize: '48px', marginBottom: '12px' }}>📦</div>
+            <div style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '8px' }}>
+              {bulkFinalizing ? 'Processing...' : 'Bulk Finalize'}
+            </div>
+            <div style={{ fontSize: '14px', opacity: 0.9 }}>
+              Process backlog clips → final videos + queue
+            </div>
+          </button>
         </div>
 
         {/* Queue Stats Cards */}
@@ -225,7 +294,7 @@ export default function AdminPage() {
                 PENDING
               </div>
               <div style={{ fontSize: '48px', fontWeight: 'bold', color: '#f59e0b', marginBottom: '8px' }}>
-                {queueStats.pending}
+                {queueStats.pending ?? queueStats.data?.summary?.pending ?? 0}
               </div>
               <div style={{ fontSize: '12px', color: '#999' }}>
                 Videos waiting to post
@@ -242,7 +311,7 @@ export default function AdminPage() {
                 POSTED
               </div>
               <div style={{ fontSize: '48px', fontWeight: 'bold', color: '#10b981', marginBottom: '8px' }}>
-                {queueStats.posted}
+                {queueStats.posted ?? queueStats.data?.summary?.posted ?? 0}
               </div>
               <div style={{ fontSize: '12px', color: '#999' }}>
                 Successfully published
@@ -259,12 +328,31 @@ export default function AdminPage() {
                 FAILED
               </div>
               <div style={{ fontSize: '48px', fontWeight: 'bold', color: '#ef4444', marginBottom: '8px' }}>
-                {queueStats.failed}
+                {queueStats.failed ?? queueStats.data?.summary?.failed ?? 0}
               </div>
               <div style={{ fontSize: '12px', color: '#999' }}>
                 Publishing errors
               </div>
             </div>
+
+            {queueStats.data?.byPlatform?.tiktok && (
+              <div style={{
+                background: 'white',
+                borderRadius: '16px',
+                padding: '24px',
+                boxShadow: '0 10px 30px rgba(0,0,0,0.1)'
+              }}>
+                <div style={{ fontSize: '14px', color: '#666', marginBottom: '8px', fontWeight: '500' }}>
+                  TIKTOK QUEUED
+                </div>
+                <div style={{ fontSize: '48px', fontWeight: 'bold', color: '#000', marginBottom: '8px' }}>
+                  {queueStats.data.byPlatform.tiktok.pending}
+                </div>
+                <div style={{ fontSize: '12px', color: '#999' }}>
+                  Ready for manual scheduling
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -296,6 +384,31 @@ export default function AdminPage() {
                     <strong>{r.platform}:</strong> {r.success ? '✅ Success' : `❌ ${r.error}`}
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Bulk Finalize Result */}
+        {bulkResult && (
+          <div style={{
+            background: bulkResult.success ? '#fef3c7' : '#fee2e2',
+            border: `2px solid ${bulkResult.success ? '#f59e0b' : '#ef4444'}`,
+            borderRadius: '16px',
+            padding: '24px',
+            marginBottom: '24px',
+            color: bulkResult.success ? '#92400e' : '#991b1b'
+          }}>
+            <div style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '12px' }}>
+              {bulkResult.success ? '📦 Bulk Finalize Complete' : '❌ Bulk Finalize Failed'}
+            </div>
+            <div style={{ fontSize: '16px', marginBottom: '8px' }}>
+              {bulkResult.message || bulkResult.error}
+            </div>
+            {bulkResult.produced && (
+              <div style={{ fontSize: '14px', marginTop: '8px' }}>
+                Produced: {bulkResult.produced.succeeded}/{bulkResult.produced.attempted} videos •
+                Queued: {bulkResult.queued?.count || 0} (incl. TikTok for manual scheduling)
               </div>
             )}
           </div>

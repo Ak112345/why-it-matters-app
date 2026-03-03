@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { produceVideo } from '../../../src/production/produceVideo';
+import { produceVideoBatch } from '../../../src/production/produceVideo';
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,8 +19,8 @@ export async function POST(request: NextRequest) {
 
     console.log(`Starting production: analysisId=${analysisId || 'batch'}`);
 
-    const results = await produceVideo({
-      analysisId,
+    const results = await produceVideoBatch({
+      analysisIds: analysisId ? [analysisId] : undefined,
       batchSize,
       addSubtitles,
       addHookOverlay,
