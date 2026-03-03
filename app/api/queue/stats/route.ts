@@ -6,14 +6,16 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/src/utils/supabaseClient';
 
+export const revalidate = 0; // Always fresh
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    // Get all queue items
+    // Get all queue items (exclude archived for active queue stats)
     const { data: queueItems, error } = await supabase
       .from('posting_queue')
       .select('id, platform, status, scheduled_for, created_at, final_video_id, error_message')
+      .neq('status', 'archived') // Exclude archived posts
       .order('created_at', { ascending: false });
 
     if (error) {
