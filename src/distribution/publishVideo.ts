@@ -89,10 +89,10 @@ async function publishToInstagram(
   videoUrl: string,
   caption: string
 ): Promise<{ success: boolean; postUrl?: string; error?: string }> {
-  const igUserId = process.env.INSTAGRAM_BUSINESS_ID || process.env.INSTAGRAM_USER_ID || process.env.META_IG_BUSINESS_ID;
+  const igUserId = process.env.META_IG_BUSINESS_ID || process.env.INSTAGRAM_USER_ID || process.env.INSTAGRAM_BUSINESS_ID;
   
   if (!igUserId) {
-    return { success: false, error: 'Missing INSTAGRAM_BUSINESS_ID' };
+    return { success: false, error: 'Missing META_IG_BUSINESS_ID' };
   }
 
   try {
@@ -293,31 +293,76 @@ async function refreshYouTubeToken(): Promise<string> {
 
 /**
  * Refresh Meta/Facebook page access token using long-lived user token
- * Page tokens can be refreshed from user tokens
+ * Page tokens can be refreshed from user tokens, with fallback to stored token
  */
 async function refreshMetaPageToken(): Promise<string> {
   const pageId = process.env.FACEBOOK_PAGE_ID;
   const userToken = process.env.META_USER_ACCESS_TOKEN;
+  const fallbackPageToken = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
 
-  if (!pageId || !userToken) {
-    throw new Error('Missing FACEBOOK_PAGE_ID or META_USER_ACCESS_TOKEN');
+  if (!pageId) {
+    throw new Error('Missing FACEBOOK_PAGE_ID');
+  }
+
+  if (!userToken) {
+    console.warn('[token] META_USER_ACCESS_TOKEN not set, using fallback page token');
+    if (!fallbackPageToken) {
+      throw new Error('Missing both META_USER_ACCESS_TOKEN and FACEBOOK_PAGE_ACCESS_TOKEN');
+    }
+    return fallbackPageToken;
   }
 
   try {
-    // Get fresh page access token from user token
+    // Try to get fresh page access token from user token
     const res = await fetch(
-      `https://graph.facebook.com/v19.0/${pageId}?fields=access_token&access_token=${userToken}`
+      `https://graph.facebook.com/v19.0/${pageId}?fields=access_token,name&access_token=${userToken}`,
+      { timeout: 5000 }
     );
 
     const data = await res.json();
-    if (!res.ok || !data.access_token) {
-      throw new Error(data.error?.message || 'Failed to refresh page token');
+
+    if (!res.ok) {
+      const errorMsg = data.error?.message || `Status ${res.status}`;
+      const errorCode = data.error?.code || 'UNKNOWN';
+      console.error(`[token] Meta token refresh failed (${errorCode}): ${errorMsg}`);
+      
+      // If user token is expired, we need the user to re-authenticate
+      if (errorCode === 190 || errorMsg.includes('Session has expired') || errorMsg.includes('Invalid access token')) {
+        console.error('[token] User access token appears to be expired. Please re-authenticate.');
+        if (fallbackPageToken) {
+          console.warn('[token] Falling back to cached page token (may be expired)');
+          return fallbackPageToken;
+        }
+        throw new Error(`User token expired or invalid. Error: ${errorMsg}`);
+      }
+
+      // Other errors - try fallback
+      if (fallbackPageToken) {
+        console.warn(`[token] Falling back to cached page token: ${errorMsg}`);
+        return fallbackPageToken;
+      }
+      throw new Error(errorMsg);
     }
 
-    console.log('[token] Meta page access token refreshed successfully');
+    if (!data.access_token) {
+      console.error('[token] No access_token in response:', data);
+      if (fallbackPageToken) {
+        console.warn('[token] Falling back to cached page token');
+        return fallbackPageToken;
+      }
+      throw new Error('No access_token returned from Meta API');
+    }
+
+    console.log('[token] Meta page access token refreshed successfully for page:', data.name);
     return data.access_token;
   } catch (err: any) {
-    console.error('[token] Meta token refresh failed:', err.message);
+    console.error('[token] Meta token refresh error:', err.message);
+    
+    // Last resort: use fallback token
+    if (fallbackPageToken) {
+      console.warn('[token] Using fallback cached page token due to error');
+      return fallbackPageToken;
+    }
     throw err;
   }
 }

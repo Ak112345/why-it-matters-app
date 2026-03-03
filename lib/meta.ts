@@ -5,7 +5,7 @@ export const META_GRAPH = "https://graph.facebook.com/v19.0";
 export function getMetaEnv() {
   const pageId = process.env.FACEBOOK_PAGE_ID!;
   const token = process.env.FACEBOOK_PAGE_ACCESS_TOKEN!;
-  const igId = process.env.INSTAGRAM_BUSINESS_ID!;
+  const igId = process.env.META_IG_BUSINESS_ID!;
   if (!pageId || !token || !igId) throw new Error("Missing Meta env vars");
   return { pageId, token, igId };
 }

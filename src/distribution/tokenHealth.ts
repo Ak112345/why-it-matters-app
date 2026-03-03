@@ -6,7 +6,7 @@ export interface PlatformTokenHealth {
 }
 
 async function checkInstagramToken(): Promise<PlatformTokenHealth> {
-  const igUserId = process.env.INSTAGRAM_BUSINESS_ID || process.env.INSTAGRAM_USER_ID || process.env.META_IG_BUSINESS_ID;
+  const igUserId = process.env.META_IG_BUSINESS_ID || process.env.INSTAGRAM_USER_ID || process.env.INSTAGRAM_BUSINESS_ID;
   const userToken = process.env.META_USER_ACCESS_TOKEN;
   const pageId = process.env.FACEBOOK_PAGE_ID;
 
@@ -15,7 +15,7 @@ async function checkInstagramToken(): Promise<PlatformTokenHealth> {
     return {
       platform: 'instagram',
       ok: false,
-      error: 'Missing INSTAGRAM_BUSINESS_ID',
+      error: 'Missing META_IG_BUSINESS_ID',
     };
   }
 
