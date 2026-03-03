@@ -66,7 +66,7 @@ export async function GET() {
       timestamp: item.created_at,
     }));
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       data: {
         summary: {
@@ -93,6 +93,13 @@ export async function GET() {
       posted: postedItems.length,
       total: items.length,
     });
+
+    // Ensure no caching
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+
+    return response;
   } catch (err: any) {
     console.error('[Queue Stats] Error:', err);
     return NextResponse.json(
