@@ -1,10 +1,15 @@
 /**
- * API endpoint to publish videos (called by Quiet Hours or cron)
+ * API endpoint to trigger Railway posting jobs
  * POST /api/publish
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { publishVideo, retryFailedPosts, type PublishResult } from '../../../src/distribution/publishVideo';
+import {
+  assertFinalVideoExists,
+  fetchDuePostingJobs,
+  fetchPostingJobById,
+  triggerRailwayPost,
+} from '../../../src/distribution/railwayPosting';
 
 function isAuthorized(request: NextRequest): boolean {
   if (process.env.NODE_ENV !== 'production') return true;
@@ -23,41 +28,51 @@ export async function POST(request: NextRequest) {
     }
 
     let body: any = {};
-    
-    // Support both JSON body and empty body (for manual triggers)
     try {
       body = await request.json();
     } catch {
-      // Empty body is fine, use defaults
+      body = {};
     }
-    
-    const {
-      queueId,
-      platform,
-      dryRun = false,
-      retryFailed = false,
-    } = body;
 
-    console.log(`Starting publishing: queueId=${queueId || 'due posts'}, platform=${platform || 'all'}`);
+    const { queueId, platform } = body;
+    const platformFilter = platform || 'youtube'; // Default to YouTube only for now
 
-    let results: PublishResult[];
+    const jobs = queueId
+      ? [await fetchPostingJobById(queueId)]
+      : await fetchDuePostingJobs(5, platformFilter);
 
-    if (retryFailed) {
-      results = await retryFailedPosts();
-    } else {
-      results = await publishVideo({
-        queueId,
-        platform,
-        dryRun,
+    if (!jobs.length) {
+      return NextResponse.json({
+        success: true,
+        message: `No ${platformFilter} posting jobs due`,
+        data: [],
       });
     }
 
+    const results = [] as any[];
+
+    for (const job of jobs) {
+      const exists = await assertFinalVideoExists(job);
+      if (!exists.ok) {
+        results.push({
+          jobId: job.id,
+          platform: job.platform,
+          success: false,
+          error: exists.error,
+        });
+        continue;
+      }
+
+      const triggered = await triggerRailwayPost(job.id, job.platform);
+      results.push(triggered);
+    }
+
     const successCount = results.filter(r => r.success).length;
-    const failCount = results.filter(r => !r.success).length;
+    const failCount = results.length - successCount;
 
     return NextResponse.json({
-      success: true,
-      message: `Published ${successCount} videos, ${failCount} failed`,
+      success: failCount === 0,
+      message: `Triggered ${successCount} ${platformFilter} jobs, ${failCount} failed`,
       data: results,
     });
   } catch (error) {
@@ -74,7 +89,14 @@ export async function POST(request: NextRequest) {
 
 export async function GET() {
   return NextResponse.json({
-    message: 'Video Publishing API',
-    usage: 'POST with JSON body: { queueId?: string, platform?: string, dryRun?: boolean, retryFailed?: boolean }',
+    message: 'Publish trigger API',
+    usage: 'POST with optional body: { queueId?: string, platform?: string }',
+    note: 'Defaults to YouTube only (instagram/facebook/youtube_shorts can be requested via platform param)',
+    examples: {
+      youtubeOnly: { platform: 'youtube' },
+      instagram: { platform: 'instagram' },
+      facebook: { platform: 'facebook' },
+      specificJob: { queueId: 'job-id-here' },
+    },
   });
 }

@@ -1,12 +1,11 @@
 export const dynamic = 'force-dynamic';
 /**
- * Cron endpoint for automated publishing
- * Triggered every 15 minutes by Vercel Cron
+ * Cron endpoint for automated posting trigger (YouTube only for now)
  * GET /api/publish/cron
  */
 
 import { NextResponse } from 'next/server';
-import { publishVideo, type PublishResult } from '../../../../src/distribution/publishVideo';
+import { assertFinalVideoExists, fetchDuePostingJobs, triggerRailwayPost } from '../../../../src/distribution/railwayPosting';
 
 export async function GET(request: Request) {
   try {
@@ -16,34 +15,54 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    console.log('[CRON] Starting automated publishing check...');
+    const jobs = await fetchDuePostingJobs(10);
 
-    // Publish all pending posts that are due
-    const results: PublishResult[] = await publishVideo({
-      dryRun: false,
-    });
+    // Filter for YouTube only (pause Meta for now)
+    const youtubeJobs = jobs.filter(job => 
+      job.platform === 'youtube' || job.platform === 'youtube_shorts'
+    );
+
+    if (!youtubeJobs.length) {
+      return NextResponse.json({
+        success: true,
+        message: 'No YouTube posts due for publishing (Meta/Instagram/Facebook paused)',
+        timestamp: new Date().toISOString(),
+        triggered: 0,
+        failed: 0,
+        results: [],
+        skipped: jobs.length,
+      });
+    }
+
+    const results = [] as any[];
+
+    for (const job of youtubeJobs) {
+      const exists = await assertFinalVideoExists(job);
+      if (!exists.ok) {
+        results.push({
+          jobId: job.id,
+          platform: job.platform,
+          success: false,
+          error: exists.error,
+        });
+        continue;
+      }
+
+      const triggerResult = await triggerRailwayPost(job.id, job.platform);
+      results.push(triggerResult);
+    }
 
     const successCount = results.filter(r => r.success).length;
-    const failCount = results.filter(r => !r.success).length;
-
-    const message = results.length === 0
-      ? 'No pending posts due for publishing'
-      : `Published ${successCount} videos, ${failCount} failed`;
-
-    console.log(`[CRON] ${message}`);
+    const failCount = results.length - successCount;
 
     return NextResponse.json({
-      success: true,
-      message,
+      success: failCount === 0,
+      message: `Triggered ${successCount} YouTube jobs, ${failCount} failed (Meta paused)`,
       timestamp: new Date().toISOString(),
-      published: successCount,
+      triggered: successCount,
       failed: failCount,
-      results: results.map(r => ({
-        queueId: r.queueId,
-        platform: r.platform,
-        success: r.success,
-        error: r.error,
-      })),
+      skipped: jobs.length - youtubeJobs.length,
+      results,
     });
   } catch (error) {
     console.error('[CRON] Error in automated publishing:', error);

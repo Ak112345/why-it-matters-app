@@ -9,7 +9,7 @@ import { segmentClips } from '../../../../src/ingestion/segmentClips';
 import { analyzeClip } from '../../../../src/analysis/analyzeClip';
 import { produceVideo } from '../../../../src/production/produceVideo';
 import { queueVideos } from '../../../../src/distribution/queueVideos';
-import { publishVideo } from '../../../../src/distribution/publishVideo';
+import { triggerRailwayPostForQueueJob } from '../../../../src/distribution/railwayPosting';
 import { contentCalendar } from '../../../../src/intelligence/contentCalendar';
 
 export const runtime = "nodejs";
@@ -35,16 +35,12 @@ function getTodaysPillar(): string {
 
 /**
  * Get today's platform priority from the calendar
+ * NOTE: Returning youtube_shorts only for now while we stabilize YouTube posting
  */
 function getTodaysPlatform(): 'instagram' | 'youtube_shorts' | 'all' {
-  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
-  const today = days[new Date().getDay()];
-  const priority = contentCalendar[today].priority;
-  
-  // Normalize platform names to match queue function expectations
-  if (priority === 'youtube') return 'youtube_shorts';
-  if (priority === 'instagram_facebook' || priority === 'facebook' || priority === 'instagram') return 'instagram';
-  return 'all';
+  // Temporarily return youtube_shorts only to focus on YouTube stability
+  // TODO: Re-enable multiple platforms after YouTube posting is stable
+  return 'youtube_shorts';
 }
 
 export async function POST(request: NextRequest) {
@@ -218,28 +214,36 @@ export async function POST(request: NextRequest) {
       throw error;
     }
 
-    // Step 6: Publish immediately
+    // Step 6: Trigger Railway posting immediately
     stageStart = Date.now();
-    let publishResults;
+    let publishResults: any[] = [];
     try {
-      console.log('[POST NOW] 6/6: Publishing now...');
-      publishResults = await publishVideo({
-        queueId: queuedItems[0]?.queueIds?.[0],
-        platform: targetPlatform as 'instagram' | 'youtube_shorts',
-        dryRun,
-      });
+      console.log('[POST NOW] 6/6: Triggering Railway posting...');
+
+      const queueIds = queuedItems.flatMap(item => item.queueIds || []);
+
+      for (const queueId of queueIds) {
+        if (dryRun) {
+          publishResults.push({ queueId, success: true, dryRun: true });
+          continue;
+        }
+
+        const trigger = await triggerRailwayPostForQueueJob(queueId);
+        publishResults.push(trigger);
+      }
+
       stages.push({
         stage: 'publish',
-        success: publishResults[0]?.success || false,
+        success: publishResults.every(r => r.success),
         duration: Date.now() - stageStart,
         count: publishResults.filter(r => r.success).length,
         data: publishResults,
       });
 
       if (dryRun) {
-        console.log(`[POST NOW] ✓ Dry run complete - would have published (${stages[5].duration}ms)`);
+        console.log(`[POST NOW] ✓ Dry run complete - trigger skipped (${stages[5].duration}ms)`);
       } else {
-        console.log(`[POST NOW] ✓ Published ${stages[5].count} video(s) (${stages[5].duration}ms)`);
+        console.log(`[POST NOW] ✓ Triggered ${stages[5].count} posting job(s) (${stages[5].duration}ms)`);
       }
     } catch (error) {
       stages.push({
@@ -258,16 +262,16 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: allSuccessful,
-      message: dryRun 
-        ? 'Content generated (dry run - not posted)' 
-        : 'Content generated and posted successfully!',
+      message: dryRun
+        ? 'Content generated (dry run - not posted)'
+        : 'Content generated and posting triggered successfully!',
       timestamp: new Date().toISOString(),
       totalDuration,
       query: searchQuery,
       platform: targetPlatform,
       dryRun,
       stages,
-      postUrl: publishResults?.[0]?.postUrl,
+      triggerResults: publishResults,
     });
   } catch (error) {
     const totalDuration = Date.now() - startTime;
@@ -288,8 +292,9 @@ export async function POST(request: NextRequest) {
 
 export async function GET() {
   return NextResponse.json({
-    message: 'Immediate Content Generation & Posting API',
+    message: 'Immediate Content Generation & Posting API (YouTube focused)',
     usage: 'POST with JSON body: { query?: string, platform?: string, dryRun?: boolean }',
-    description: 'Generates and posts content immediately. If query is omitted, uses today\'s content pillar.',
+    description: 'Generates and posts content immediately to YouTube only (Meta paused for stability). If query is omitted, uses today\'s content pillar.',
+    note: 'Using YouTube (youtube_shorts) platform only for now. Use /api/publish to manually trigger other platforms.',
   });
 }

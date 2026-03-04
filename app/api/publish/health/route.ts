@@ -1,23 +1,46 @@
 import { NextResponse } from 'next/server';
-import { checkAllPublishTokenHealth } from '../../../../src/distribution/tokenHealth';
 
 export async function GET() {
   try {
-    const results = await checkAllPublishTokenHealth();
-    const ok = results.every((result) => result.ok);
+    const workerUrl = process.env.RAILWAY_WORKER_URL;
+    const workerSecret = process.env.WORKER_SECRET;
+
+    if (!workerUrl) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Missing RAILWAY_WORKER_URL',
+        },
+        { status: 500 }
+      );
+    }
+
+    const res = await fetch(`${workerUrl}/health`, {
+      method: 'GET',
+      headers: workerSecret ? { 'x-worker-secret': workerSecret } : {},
+    });
+
+    const text = await res.text();
+    let data: any = {};
+
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { raw: text };
+    }
 
     return NextResponse.json(
       {
-        success: ok,
-        results,
+        success: res.ok,
+        worker: data,
       },
-      { status: ok ? 200 : 503 }
+      { status: res.ok ? 200 : 503 }
     );
   } catch (error: any) {
     return NextResponse.json(
       {
         success: false,
-        error: error?.message || 'Failed to run token health checks',
+        error: error?.message || 'Failed to contact Railway worker',
       },
       { status: 500 }
     );

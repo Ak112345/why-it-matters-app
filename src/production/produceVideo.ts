@@ -8,8 +8,8 @@ import * as os from 'os';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-const RAILWAY_URL = process.env.RAILWAY_WORKER_URL || 'https://why-it-matters-worker-production.up.railway.app';
-const WORKER_SECRET = process.env.WORKER_SECRET!;
+const RAILWAY_URL = process.env.RAILWAY_WORKER_URL;
+const WORKER_SECRET = process.env.WORKER_SECRET;
 
 // ─────────────────────────────────────────────
 // Types
@@ -141,6 +141,14 @@ async function dispatchToRailway(
   captions: WordCaption[]
 ): Promise<ProduceJobResult> {
   console.log(`[produceVideo] Dispatching job to Railway for analysis ${job.analysisId}`);
+
+  if (!RAILWAY_URL) {
+    return { success: false, error: 'Missing RAILWAY_WORKER_URL' };
+  }
+
+  if (!WORKER_SECRET) {
+    return { success: false, error: 'Missing WORKER_SECRET' };
+  }
 
   const payload = {
     analysisId: job.analysisId,
