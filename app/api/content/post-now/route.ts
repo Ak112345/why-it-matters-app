@@ -4,13 +4,13 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { ingestClips } from '../../../../src/ingestion/ingestClips';
-import { segmentClips } from '../../../../src/ingestion/segmentClips';
-import { analyzeClip } from '../../../../src/analysis/analyzeClip';
-import { produceVideo } from '../../../../src/production/produceVideo';
-import { queueVideos } from '../../../../src/distribution/queueVideos';
-import { triggerRailwayPostForQueueJob } from '../../../../src/distribution/railwayPosting';
-import { contentCalendar } from '../../../../src/intelligence/contentCalendar';
+import { ingestClips } from '../../../../src/ingestion/ingestClips.js';
+import { segmentClips } from '../../../../src/ingestion/segmentClips.js';
+import { analyzeClip } from '../../../../src/analysis/analyzeClip.js';
+import { produceVideo } from '../../../../src/production/produceVideo.js';
+import { queueVideos } from '../../../../src/distribution/queueVideos.js';
+import { triggerRailwayPostForQueueJob } from '../../../../src/distribution/railwayPosting.js';
+import { contentCalendar } from '../../../../src/intelligence/contentCalendar.js';
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

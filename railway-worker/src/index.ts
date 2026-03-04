@@ -795,6 +795,21 @@ function trimAndCaptionVideo(
   });
 }
 
+async function getVideoDuration(filePath: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(filePath, (err, metadata) => {
+      if (err) {
+        console.error('[worker] ffprobe error:', err);
+        reject(err);
+        return;
+      }
+      const duration = metadata.format.duration || 0;
+      console.log(`[worker] Video duration: ${duration.toFixed(2)}s`);
+      resolve(duration);
+    });
+  });
+}
+
 async function uploadToSupabase(filePath: string, videoId: string): Promise<{ publicUrl: string; storagePath: string }> {
   const fileBuffer = fs.readFileSync(filePath);
   const storagePath = `${videoId}/final.mp4`;
@@ -808,8 +823,31 @@ async function uploadToSupabase(filePath: string, videoId: string): Promise<{ pu
 
   if (error) throw new Error(`Supabase upload failed: ${error.message}`);
 
+  // Verify upload succeeded by checking metadata
+  console.log('[worker] Verifying upload...');
+  const { data: metadata, error: metadataError } = await supabase.storage
+    .from('final_videos')
+    .list(videoId);
+
+  if (metadataError) {
+    throw new Error(`Failed to verify upload: ${metadataError.message}`);
+  }
+
+  const uploadedFile = metadata?.find(f => f.name === 'final.mp4');
+  if (!uploadedFile) {
+    throw new Error('Uploaded file not found in storage');
+  }
+
+  const fileSizeBytes = uploadedFile.metadata?.size || 0;
+  if (!fileSizeBytes || fileSizeBytes === 0) {
+    throw new Error('Uploaded file is zero bytes or missing size');
+  }
+
+  console.log(`[worker] Upload verified: ${(fileSizeBytes / 1024 / 1024).toFixed(2)}MB`);
+
   const { data } = supabase.storage.from('final_videos').getPublicUrl(storagePath);
   return { publicUrl: data.publicUrl, storagePath };
+}
 }
 
 async function saveVideoRecord(
@@ -819,7 +857,13 @@ async function saveVideoRecord(
   finalVideoPath: string,
   hook: string,
   caption: string,
-  viralityScore: number
+  viralityScore: number,
+  durationSeconds: number
+  // Validate duration before inserting
+  if (!durationSeconds || Number.isNaN(durationSeconds) || durationSeconds <= 0) {
+    throw new Error(`Invalid duration from ffprobe: ${durationSeconds}`);
+  }
+
 ): Promise<void> {
   const nowIso = new Date().toISOString();
 
@@ -841,7 +885,9 @@ async function saveVideoRecord(
     final_video_path: finalVideoPath,
     status: 'ready',
     has_subtitles: true,
+    duration_seconds: durationSeconds,
     produced_at: nowIso,
+      error_message: null,
     created_at: nowIso,
     updated_at: nowIso,
   });
@@ -1223,11 +1269,14 @@ app.post('/produce', requireSecret, async (req, res) => {
     const outputSizeMB = (fs.statSync(outputPath).size / 1024 / 1024).toFixed(1);
     console.log(`[worker] Output file: ${outputSizeMB}MB`);
 
+    console.log('[worker] Getting video duration...');
+    const durationSeconds = await getVideoDuration(outputPath);
+
     console.log('[worker] Uploading to Supabase...');
     const upload = await uploadToSupabase(outputPath, videoId);
     console.log(`[worker] Uploaded: ${upload.publicUrl}`);
 
-    await saveVideoRecord(videoId, analysisId, upload.publicUrl, upload.storagePath, hook, caption || hook, viralityScore);
+    await saveVideoRecord(videoId, analysisId, upload.publicUrl, upload.storagePath, hook, caption || hook, viralityScore, durationSeconds);
     console.log(`[worker] ✓ Job complete. Video ID: ${videoId}`);
   } catch (err: any) {
     console.error(`[worker] ✗ Job failed: ${err.message}`);

@@ -72,6 +72,8 @@ async function runProduction(input: {
     ? explicitIds
     : await getPendingAnalysisIds(batchSize);
 
+  console.log('analysis lookup result:', { found: targetAnalysisIds.length > 0, count: targetAnalysisIds.length, ids: targetAnalysisIds, requestedId: analysisId });
+
   if (targetAnalysisIds.length === 0) {
     return {
       success: true,
@@ -134,6 +136,7 @@ export async function POST(request: NextRequest) {
       body = {};
     }
 
+    console.log('produce body:', JSON.stringify(body));
     const response = await runProduction(body);
     return NextResponse.json(response);
   } catch (error) {

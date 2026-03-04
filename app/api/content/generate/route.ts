@@ -7,7 +7,7 @@ import { ingestClips } from '../../../../src/ingestion/ingestClips';
 import { segmentClips } from '../../../../src/ingestion/segmentClips';
 import { analyzeClip } from '../../../../src/analysis/analyzeClip';
 import { produceVideo } from '../../../../src/production/produceVideo';
-import { queueVideos } from '../../../../src/distribution/queueVideos';
+import { queueVideos } from '../../../../src/distribution/queueVideos.js';
 import { contentCalendar } from '../../../../src/intelligence/contentCalendar';
 import { supabase } from '../../../../src/utils/supabaseClient';
 
