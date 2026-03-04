@@ -814,8 +814,8 @@ function trimAndCaptionVideo(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const videoFilter = drawtextFilter
-      ? `scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2,${drawtextFilter}`
-      : `scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2`;
+      ? drawtextFilter
+      : `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920`;
 
     ffmpeg(inputPath)
       .seekInput(startTime)
@@ -828,9 +828,14 @@ function trimAndCaptionVideo(
       .addOption('-threads', '2')
       .addOption('-movflags', '+faststart')
       .addOption('-fs', '50M')
+      .addOption('-f', 'lavfi')
+      .addOption('-i', 'anullsrc=r=44100:cl=stereo')
+      .addOption('-filter_complex', '[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=0[aout]')
+      .addOption('-map', '0:v')
+      .addOption('-map', '[aout]')
       .addOption('-c:a', 'aac')
       .addOption('-b:a', '128k')
-      .addOption('-q:a', '5')
+      .addOption('-shortest')
       .output(outputPath)
       .on('start', cmd => console.log('[worker] FFmpeg command:', cmd))
       .on('progress', p => console.log(`[worker] FFmpeg progress: ${p.percent?.toFixed(0) ?? '?'}%`))
