@@ -279,7 +279,7 @@ export async function produceVideoBatch(
 
     console.log(`[produceVideo] Processing batch ${batchNum}/${totalBatches} (${batch.length} videos)`);
 
-    // Fetch analysis data for this batch
+    // Fetch analysis data for this batch (only completed analyses)
     const { data: analysisRecords, error: fetchError } = await supabase
       .from('analysis')
       .select(`
@@ -289,6 +289,7 @@ export async function produceVideoBatch(
         segment_id,
         virality_score
       `)
+      .eq('status', 'complete')
       .in('id', batch);
 
     if (fetchError) {

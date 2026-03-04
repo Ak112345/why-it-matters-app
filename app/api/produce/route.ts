@@ -28,6 +28,7 @@ async function getPendingAnalysisIds(limit: number): Promise<string[]> {
   const { data: analyses, error: analysisError } = await supabase
     .from('analysis')
     .select('id')
+    .eq('status', 'complete')
     .order('created_at', { ascending: true })
     .limit(fetchLimit);
 

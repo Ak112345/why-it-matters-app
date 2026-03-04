@@ -212,12 +212,6 @@ async function analyzeSingleSegment(segmentId: string): Promise<string> {
     return existingAnalysis.id;
   }
 
-  // If existing analysis has fake hook, delete it so we re-analyze
-  if (existingAnalysis && existingAnalysis.hook === 'Check this out') {
-    await supabase.from('analysis').delete().eq('id', existingAnalysis.id);
-    console.log(`Deleted fake analysis for segment ${segmentId}, re-analyzing`);
-  }
-
   // Fetch segment + raw clip info
   const { data: segment, error: fetchError } = await supabase
     .from('clips_segmented')
@@ -261,23 +255,29 @@ async function analyzeSingleSegment(segmentId: string): Promise<string> {
     throw new Error(`Analysis generation failed: ${msg}`);
   }
 
-  // Insert into database
+  // Upsert analysis (replaces old analysis if exists, prevents duplicates via segment_id constraint)
+  const now = new Date().toISOString();
+  const analysisRow = {
+    segment_id: segmentId,
+    hook: analysis.hook,
+    explanation: analysis.explanation,
+    caption: analysis.caption,
+    hashtags: analysis.hashtags,
+    virality_score: analysis.viralityScore,
+    metadata: analysis.metadata as any,
+    raw_ai_response: analysis as any,
+    status: 'complete',
+    analyzed_at: now,
+    updated_at: now,
+  };
+
   const { data: insertedAnalysis, error: insertError } = await supabase
     .from('analysis')
-    .insert({
-      segment_id: segmentId,
-      hook: analysis.hook,
-      explanation: analysis.explanation,
-      caption: analysis.caption,
-      hashtags: analysis.hashtags,
-      virality_score: analysis.viralityScore,
-      metadata: analysis.metadata as any,
-      analyzed_at: new Date().toISOString(),
-    } as any)
+    .upsert(analysisRow, { onConflict: 'segment_id' })
     .select()
     .single();
 
-  if (insertError) throw new Error(`Failed to insert analysis: ${insertError.message}`);
+  if (insertError) throw new Error(`Failed to upsert analysis: ${insertError.message}`);
 
   // Run through content director approval
   // TEMPORARILY DISABLED - Checking if this is causing timeout
