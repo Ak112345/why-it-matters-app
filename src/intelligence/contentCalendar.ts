@@ -1,4 +1,3 @@
-cat > /workspaces/why-it-matters-app/src/intelligence/contentCalendar.ts << 'EOF'
 export type ContentPillar =
   | 'Policy Change'
   | 'Cultural Event'
@@ -133,4 +132,3 @@ export function getTodaysPlatform(): 'instagram' | 'youtube_shorts' | 'all' {
   if (priority === 'instagram') return 'instagram';
   return 'all';
 }
-EOF
