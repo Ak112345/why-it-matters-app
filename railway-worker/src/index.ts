@@ -4,16 +4,19 @@
 
 import express from 'express';
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
+import ffprobeInstaller from '@ffprobe-installer/ffprobe';
 import ffmpeg from 'fluent-ffmpeg';
 import { createClient } from '@supabase/supabase-js';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
+import { getCompleteFilterChain } from './brandTemplates';
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
-ffmpeg.setFfprobePath(ffmpegInstaller.path.replace('ffmpeg', 'ffprobe'));
+ffmpeg.setFfprobePath(ffprobeInstaller.path);
 console.log(`[worker] FFmpeg path: ${ffmpegInstaller.path}`);
+console.log(`[worker] FFprobe path: ${ffprobeInstaller.path}`);
 console.log(`[worker] FFmpeg version: ${ffmpegInstaller.version}`);
 
 const app = express();
@@ -761,8 +764,23 @@ function buildDrawtextFilter(captions: WordCaption[], fallbackHook: string): str
       .join(',');
   }
 
-  const safeHook = fallbackHook
-    .replace(/[\r\n\t]/g, ' ')
+  // Before building drawtext, wrap the hook into lines of max 35 chars
+  const words = fallbackHook.split(' ');
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    if ((current + ' ' + word).length > 35) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = current ? current + ' ' + word : word;
+    }
+  }
+  lines.push(current);
+  const wrappedHook = lines.join('\\n');
+
+  const safeHook = wrappedHook
+    .replace(/[\r\t]/g, ' ')
     .replace(/\\/g, '\\\\')
     .replace(/'/g, '\u2019')
     .replace(/:/g, '\\:')
@@ -771,8 +789,7 @@ function buildDrawtextFilter(captions: WordCaption[], fallbackHook: string): str
     .replace(/,/g, '\\,')
     .replace(/;/g, '\\;')
     .replace(/=/g, '\\=')
-    .replace(/%/g, '\\%')
-    .substring(0, 80);
+    .replace(/%/g, '\\%');
 
   return (
     `drawtext=text='${safeHook}'` +
@@ -783,7 +800,7 @@ function buildDrawtextFilter(captions: WordCaption[], fallbackHook: string): str
     `:bordercolor=black@0.8` +
     `:shadowx=2:shadowy=2` +
     `:x=(w-text_w)/2` +
-    `:y=h*0.80` +
+    `:y=h*0.15` +
     `:enable=1`
   );
 }
@@ -804,8 +821,6 @@ function trimAndCaptionVideo(
       .seekInput(startTime)
       .duration(duration)
       .videoFilter(videoFilter)
-      .audioCodec('aac')
-      .audioBitrate('128k')
       .videoCodec('libx264')
       .addOption('-preset', 'fast')
       .addOption('-crf', '23')
@@ -813,6 +828,9 @@ function trimAndCaptionVideo(
       .addOption('-threads', '2')
       .addOption('-movflags', '+faststart')
       .addOption('-fs', '50M')
+      .addOption('-c:a', 'aac')
+      .addOption('-b:a', '128k')
+      .addOption('-q:a', '5')
       .output(outputPath)
       .on('start', cmd => console.log('[worker] FFmpeg command:', cmd))
       .on('progress', p => console.log(`[worker] FFmpeg progress: ${p.percent?.toFixed(0) ?? '?'}%`))
@@ -910,7 +928,7 @@ async function saveVideoRecord(
     throw new Error(`Failed to resolve segment_id for analysis ${analysisId}: ${analysisError?.message || 'missing segment_id'}`);
   }
 
-  const { error: finalError } = await supabase.from('videos_final').insert({
+  const finalInsertPayload = {
     id: videoId,
     analysis_id: analysisId,
     segment_id: analysisRow.segment_id,
@@ -923,10 +941,27 @@ async function saveVideoRecord(
     error_message: null,
     created_at: nowIso,
     updated_at: nowIso,
-  });
+  };
+
+  const { error: finalError } = await supabase.from('videos_final').insert(finalInsertPayload);
 
   if (finalError) {
-    throw new Error(`Supabase insert to videos_final failed: ${finalError.message}`);
+    const missingFinalPathColumn =
+      finalError.message.includes("Could not find the 'final_video_path' column") ||
+      finalError.message.includes('schema cache');
+
+    if (!missingFinalPathColumn) {
+      throw new Error(`Supabase insert to videos_final failed: ${finalError.message}`);
+    }
+
+    console.warn('[worker] videos_final schema cache may be stale; retrying insert without final_video_path');
+
+    const { final_video_path: _ignored, ...fallbackPayload } = finalInsertPayload;
+    const { error: fallbackError } = await supabase.from('videos_final').insert(fallbackPayload);
+
+    if (fallbackError) {
+      throw new Error(`Supabase insert to videos_final failed: ${fallbackError.message}`);
+    }
   }
 
   await supabase.from('produced_videos').insert({
@@ -1294,7 +1329,16 @@ app.post('/produce', requireSecret, async (req, res) => {
     const inputSizeMB = (fs.statSync(inputPath).size / 1024 / 1024).toFixed(1);
     console.log(`[worker] Input file: ${inputSizeMB}MB`);
 
-    const drawtextFilter = buildDrawtextFilter(captions, hook);
+    const drawtextFilter = getCompleteFilterChain(
+      {
+        hook,
+        context: explanation || caption || '',
+        contentPillar: contentPillar || 'Breaking',
+        videoDuration: duration,
+        addOutro: true,
+      },
+      captions.length > 0 ? captions : undefined
+    );
     let hasSubtitles = true;
 
     console.log('[worker] Running FFmpeg...');

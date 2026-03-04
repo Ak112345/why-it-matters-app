@@ -8,7 +8,7 @@ import { segmentClips } from '../../../../src/ingestion/segmentClips';
 import { analyzeClip } from '../../../../src/analysis/analyzeClip';
 import { produceVideo } from '../../../../src/production/produceVideo';
 import { queueVideos } from '../../../../src/distribution/queueVideos';
-import { contentCalendar } from '../../../../src/intelligence/contentCalendar';
+import { getTodaysPillar, getTodaysPlatform, getTodaysSearchQuery } from '../../../../src/intelligence/contentCalendar';
 import { supabase } from '../../../../src/utils/supabaseClient';
 
 /**
@@ -24,29 +24,6 @@ type GenerationResult = {
   data?: unknown;
   error?: string;
 };
-
-/**
- * Get today's content pillar from the calendar
- */
-function getTodaysPillar(): string {
-  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
-  const today = days[new Date().getDay()];
-  return contentCalendar[today].pillar;
-}
-
-/**
- * Get today's platform priority from the calendar
- */
-function getTodaysPlatform(): 'instagram' | 'youtube_shorts' | 'all' {
-  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
-  const today = days[new Date().getDay()];
-  const priority = contentCalendar[today].priority;
-  
-  // Normalize platform names to match queue function expectations
-  if (priority === 'youtube') return 'youtube_shorts';
-  if (priority === 'instagram_facebook' || priority === 'facebook' || priority === 'instagram') return 'instagram';
-  return 'all';
-}
 
 export async function GET() {
   try {
@@ -93,7 +70,9 @@ export async function GET() {
     // Step 1: Ingest clips based on today's content pillar
     try {
       console.log(`[DAILY CONTENT] Step 1: Ingesting clips for "${pillar}"...`);
-      const ingestResult = await ingestClips(pillar);
+      const searchQuery = getTodaysSearchQuery();
+      console.log(`[DAILY CONTENT] Search query: "${searchQuery}" for pillar: ${pillar}`);
+      const ingestResult = await ingestClips(searchQuery);
       
       results.push({
         stage: 'ingest',
