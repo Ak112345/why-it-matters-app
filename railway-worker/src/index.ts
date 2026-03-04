@@ -12,6 +12,7 @@ import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+ffmpeg.setFfprobePath(ffmpegInstaller.path.replace('ffmpeg', 'ffprobe'));
 console.log(`[worker] FFmpeg path: ${ffmpegInstaller.path}`);
 console.log(`[worker] FFmpeg version: ${ffmpegInstaller.version}`);
 
@@ -745,6 +746,7 @@ function buildDrawtextFilter(captions: WordCaption[], fallbackHook: string): str
 
         return (
           `drawtext=text='${safe}'` +
+          `:font=monospace` +
           `:fontsize=58` +
           `:fontcolor=white` +
           `:borderw=3` +
@@ -774,6 +776,7 @@ function buildDrawtextFilter(captions: WordCaption[], fallbackHook: string): str
 
   return (
     `drawtext=text='${safeHook}'` +
+    `:font=monospace` +
     `:fontsize=46` +
     `:fontcolor=white` +
     `:borderw=3` +
@@ -826,14 +829,15 @@ function trimAndCaptionVideo(
 }
 
 async function getVideoDuration(filePath: string): Promise<number> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     ffmpeg.ffprobe(filePath, (err, metadata) => {
       if (err) {
         console.error('[worker] ffprobe error:', err);
-        reject(err);
+        console.log('[worker] Defaulting to 10 seconds since ffprobe failed');
+        resolve(10); // Default to 10 seconds if ffprobe fails
         return;
       }
-      const duration = metadata.format.duration || 0;
+      const duration = metadata.format.duration || 10;
       console.log(`[worker] Video duration: ${duration.toFixed(2)}s`);
       resolve(duration);
     });
