@@ -9,7 +9,7 @@ import {
   fetchDuePostingJobs,
   fetchPostingJobById,
   triggerRailwayPost,
-} from '../../../src/distribution/railwayPosting.js';
+} from '../../../src/distribution/railwayPosting';
 
 function isAuthorized(request: NextRequest): boolean {
   if (process.env.NODE_ENV !== 'production') return true;

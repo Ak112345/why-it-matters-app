@@ -848,7 +848,6 @@ async function uploadToSupabase(filePath: string, videoId: string): Promise<{ pu
   const { data } = supabase.storage.from('final_videos').getPublicUrl(storagePath);
   return { publicUrl: data.publicUrl, storagePath };
 }
-}
 
 async function saveVideoRecord(
   videoId: string,
@@ -859,12 +858,11 @@ async function saveVideoRecord(
   caption: string,
   viralityScore: number,
   durationSeconds: number
-  // Validate duration before inserting
+): Promise<void> {
   if (!durationSeconds || Number.isNaN(durationSeconds) || durationSeconds <= 0) {
     throw new Error(`Invalid duration from ffprobe: ${durationSeconds}`);
   }
 
-): Promise<void> {
   const nowIso = new Date().toISOString();
 
   const { data: analysisRow, error: analysisError } = await supabase
@@ -887,7 +885,7 @@ async function saveVideoRecord(
     has_subtitles: true,
     duration_seconds: durationSeconds,
     produced_at: nowIso,
-      error_message: null,
+    error_message: null,
     created_at: nowIso,
     updated_at: nowIso,
   });

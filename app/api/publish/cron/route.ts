@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
  */
 
 import { NextResponse } from 'next/server';
-import { assertFinalVideoExists, fetchDuePostingJobs, triggerRailwayPost } from '../../../../src/distribution/railwayPosting.js';
+import { assertFinalVideoExists, fetchDuePostingJobs, triggerRailwayPost } from '../../../../src/distribution/railwayPosting';
 
 export async function GET(request: Request) {
   try {

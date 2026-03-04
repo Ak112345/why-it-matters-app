@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { queueVideos, getUpcomingPosts } from '../../../src/distribution/queueVideos.js';
+import { queueVideos, getUpcomingPosts } from '../../../src/distribution/queueVideos';
 
 export async function POST(request: NextRequest) {
   try {
