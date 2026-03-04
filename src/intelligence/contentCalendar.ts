@@ -1,4 +1,3 @@
-cat > /workspaces/why-it-matters-app/src/intelligence/contentCalendar.ts << 'ENDOFFILE'
 export type ContentPillar =
   | 'Policy Change'
   | 'Cultural Event'
