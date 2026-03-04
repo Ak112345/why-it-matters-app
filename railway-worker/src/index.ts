@@ -708,15 +708,40 @@ async function downloadToTemp(url: string, suffix: string): Promise<string> {
 
 function buildDrawtextFilter(captions: WordCaption[], fallbackHook: string): string {
   if (captions && captions.length > 0) {
-    return captions
+    const MAX_CAPTION_TOKENS = 120;
+    const validCaptions = captions.filter(({ word, start, end }) => {
+      return (
+        typeof word === 'string' &&
+        word.trim().length > 0 &&
+        Number.isFinite(start) &&
+        Number.isFinite(end) &&
+        end > start
+      );
+    });
+
+    const cappedCaptions = validCaptions.slice(0, MAX_CAPTION_TOKENS);
+    if (validCaptions.length > MAX_CAPTION_TOKENS) {
+      console.log(`[worker] Caption tokens capped: ${validCaptions.length} -> ${MAX_CAPTION_TOKENS}`);
+    }
+
+    return cappedCaptions
       .map(({ word, start, end }) => {
         const safe = word
+          .replace(/[\r\n\t]/g, ' ')
           .replace(/\\/g, '\\\\')
           .replace(/'/g, '\u2019')
           .replace(/:/g, '\\:')
           .replace(/\[/g, '\\[')
           .replace(/\]/g, '\\]')
-          .replace(/,/g, '\\,');
+          .replace(/,/g, '\\,')
+          .replace(/;/g, '\\;')
+          .replace(/=/g, '\\=')
+          .replace(/%/g, '\\%')
+          .trim();
+
+        if (!safe) {
+          return '';
+        }
 
         return (
           `drawtext=text='${safe}'` +
@@ -730,16 +755,21 @@ function buildDrawtextFilter(captions: WordCaption[], fallbackHook: string): str
           `:enable='between(t\\,${start}\\,${end})'`
         );
       })
+      .filter(Boolean)
       .join(',');
   }
 
   const safeHook = fallbackHook
+    .replace(/[\r\n\t]/g, ' ')
     .replace(/\\/g, '\\\\')
     .replace(/'/g, '\u2019')
     .replace(/:/g, '\\:')
     .replace(/\[/g, '\\[')
     .replace(/\]/g, '\\]')
     .replace(/,/g, '\\,')
+    .replace(/;/g, '\\;')
+    .replace(/=/g, '\\=')
+    .replace(/%/g, '\\%')
     .substring(0, 80);
 
   return (
@@ -857,7 +887,8 @@ async function saveVideoRecord(
   hook: string,
   caption: string,
   viralityScore: number,
-  durationSeconds: number
+  durationSeconds: number,
+  hasSubtitles: boolean
 ): Promise<void> {
   if (!durationSeconds || Number.isNaN(durationSeconds) || durationSeconds <= 0) {
     throw new Error(`Invalid duration from ffprobe: ${durationSeconds}`);
@@ -882,7 +913,7 @@ async function saveVideoRecord(
     file_path: videoUrl,
     final_video_path: finalVideoPath,
     status: 'ready',
-    has_subtitles: true,
+    has_subtitles: hasSubtitles,
     duration_seconds: durationSeconds,
     produced_at: nowIso,
     error_message: null,
@@ -1260,9 +1291,16 @@ app.post('/produce', requireSecret, async (req, res) => {
     console.log(`[worker] Input file: ${inputSizeMB}MB`);
 
     const drawtextFilter = buildDrawtextFilter(captions, hook);
+    let hasSubtitles = true;
 
     console.log('[worker] Running FFmpeg...');
-    await trimAndCaptionVideo(inputPath, outputPath, startTime, duration, drawtextFilter);
+    try {
+      await trimAndCaptionVideo(inputPath, outputPath, startTime, duration, drawtextFilter);
+    } catch (renderError: any) {
+      console.error('[worker] Drawtext render failed, retrying without subtitles:', renderError?.message || renderError);
+      hasSubtitles = false;
+      await trimAndCaptionVideo(inputPath, outputPath, startTime, duration, '');
+    }
 
     const outputSizeMB = (fs.statSync(outputPath).size / 1024 / 1024).toFixed(1);
     console.log(`[worker] Output file: ${outputSizeMB}MB`);
@@ -1274,7 +1312,17 @@ app.post('/produce', requireSecret, async (req, res) => {
     const upload = await uploadToSupabase(outputPath, videoId);
     console.log(`[worker] Uploaded: ${upload.publicUrl}`);
 
-    await saveVideoRecord(videoId, analysisId, upload.publicUrl, upload.storagePath, hook, caption || hook, viralityScore, durationSeconds);
+    await saveVideoRecord(
+      videoId,
+      analysisId,
+      upload.publicUrl,
+      upload.storagePath,
+      hook,
+      caption || hook,
+      viralityScore,
+      durationSeconds,
+      hasSubtitles
+    );
     console.log(`[worker] ✓ Job complete. Video ID: ${videoId}`);
   } catch (err: any) {
     console.error(`[worker] ✗ Job failed: ${err.message}`);
