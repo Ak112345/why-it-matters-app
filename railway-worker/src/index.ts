@@ -47,6 +47,17 @@ interface PostRequestBody {
   title?: string;
   description?: string;
   caption?: string;
+  // Produce fields
+  analysisId?: string;
+  sourceId?: string;
+  filePath?: string;
+  startTime?: number;
+  endTime?: number;
+  hook?: string;
+  explanation?: string;
+  contentPillar?: string;
+  viralityScore?: number;
+  captions?: Array<{ word: string; start: number; end: number }>;
 }
 
 interface PostingJob {
