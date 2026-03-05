@@ -1468,3 +1468,224 @@ app.listen(PORT, () => {
   console.log(`[worker] Pexels:   ${PEXELS_API_KEY ? '✓' : '✗ MISSING'}`);
   console.log(`[worker] Secret:   ${WORKER_SECRET ? '✓' : '✗ MISSING'}`);
 });
+
+
+function trimAndCaptionVideoYouTube(
+  inputPath: string,
+  outputPath: string,
+  startTime: number,
+  duration: number,
+  drawtextFilter: string
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const videoFilter = drawtextFilter
+      ? drawtextFilter
+      : `scale=1920:800:force_original_aspect_ratio=decrease:flags=lanczos,pad=1920:1080:0:120:black`;
+
+    ffmpeg(inputPath)
+      .seekInput(startTime)
+      .duration(duration)
+      .videoFilter(videoFilter)
+      .videoCodec('libx264')
+      .addOption('-preset', 'fast')
+      .addOption('-crf', '22')
+      .addOption('-pix_fmt', 'yuv420p')
+      .addOption('-threads', '2')
+      .addOption('-movflags', '+faststart')
+      .addOption('-fs', '150M')
+      .addOption('-f', 'lavfi')
+      .addOption('-i', 'anullsrc=r=44100:cl=stereo')
+      .addOption('-filter_complex', '[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=0[aout]')
+      .addOption('-map', '0:v')
+      .addOption('-map', '[aout]')
+      .addOption('-c:a', 'aac')
+      .addOption('-b:a', '128k')
+      .addOption('-shortest')
+      .output(outputPath)
+      .on('start', cmd => console.log('[worker] FFmpeg YouTube command:', cmd))
+      .on('progress', p => console.log(`[worker] FFmpeg YouTube progress: ${p.percent?.toFixed(0) ?? '?'}%`))
+      .on('end', () => {
+        console.log('[worker] FFmpeg YouTube finished');
+        resolve();
+      })
+      .on('error', (err, _stdout, stderr) => {
+        console.error('[worker] FFmpeg YouTube stderr:', stderr);
+        reject(new Error(`FFmpeg YouTube failed: ${err.message}`));
+      })
+      .run();
+  });
+}
+
+
+app.post('/produce-youtube', requireSecret, async (req, res) => {
+  if (isProcessing) {
+    res.setHeader('Retry-After', '30');
+    return res.status(429).json({ error: 'Worker busy', retryAfter: 30 });
+  }
+
+  const {
+    analysisId,
+    sourceId,
+    startTime = 0,
+    endTime = 45,
+    hook,
+    caption,
+    explanation,
+    contentPillar,
+    viralityScore = 0,
+    captions = [],
+  } = req.body;
+
+  if (!analysisId || !sourceId || !hook) {
+    return res.status(400).json({
+      error: 'Missing required fields: analysisId, sourceId, hook',
+    });
+  }
+
+  const pexelsId = sourceId.startsWith('pexels_')
+    ? sourceId.replace('pexels_', '')
+    : sourceId.startsWith('pixabay_')
+    ? null
+    : sourceId;
+
+  const pixabayUrl = sourceId.startsWith('pixabay_') ? null : null;
+  // Note: Pixabay clips come with a direct URL stored at fetch time
+  // For now we resolve Pexels IDs — Pixabay direct URLs handled below
+
+  isProcessing = true;
+  const videoId = uuidv4();
+  const inputPath = path.join(os.tmpdir(), `wim_yt_input_${videoId}.mp4`);
+  const outputPath = path.join(os.tmpdir(), `wim_yt_output_${videoId}.mp4`);
+
+  console.log(`\n[worker] ═══ Starting YouTube job ═══`);
+  console.log(`[worker] Analysis: ${analysisId}`);
+  console.log(`[worker] Source: ${sourceId}`);
+  console.log(`[worker] Segment: ${startTime}s → ${endTime}s`);
+  console.log(`[worker] Hook: ${hook}`);
+
+  // Respond immediately — job runs async
+  res.json({ success: true, videoId, message: 'YouTube job started' });
+
+  try {
+    const duration = endTime - startTime;
+
+    // Resolve download URL
+    let downloadUrl: string;
+    if (sourceId.startsWith('pixabay_')) {
+      // Pixabay: re-fetch direct URL from API
+      const pixabayId = sourceId.replace('pixabay_', '');
+      const pbRes = await fetch(
+        `https://pixabay.com/api/videos/?key=${process.env.PIXABAY_API_KEY}&id=${pixabayId}`
+      );
+      if (!pbRes.ok) throw new Error(`Pixabay API error ${pbRes.status}`);
+      const pbData: any = await pbRes.json();
+      const hit = pbData.hits?.[0];
+      if (!hit) throw new Error(`Pixabay video ${pixabayId} not found`);
+      downloadUrl =
+        hit.videos?.large?.url ||
+        hit.videos?.medium?.url ||
+        hit.videos?.small?.url ||
+        hit.videos?.tiny?.url;
+      if (!downloadUrl) throw new Error(`No download URL for Pixabay ${pixabayId}`);
+    } else {
+      // Pexels: use existing resolver
+      downloadUrl = await resolvePexelsUrl(pexelsId!);
+    }
+
+    console.log('[worker] Downloading YouTube clip...');
+    await downloadToTemp(downloadUrl, '.mp4').then(p => fs.renameSync(p, inputPath));
+
+    const inputSizeMB = (fs.statSync(inputPath).size / 1024 / 1024).toFixed(1);
+    console.log(`[worker] Input: ${inputSizeMB}MB`);
+
+    // Whisper transcription
+    const whisperCaptions = await transcribeWithWhisper(inputPath, startTime);
+    const finalCaptions = whisperCaptions.length > 0 ? whisperCaptions : captions;
+    console.log(`[worker] Captions: ${finalCaptions.length} words (${whisperCaptions.length > 0 ? 'Whisper' : 'fallback'})`);
+
+    // Build YouTube filter chain
+    const { getYouTubeCompleteFilterChain } = await import('./brandTemplates');
+    const drawtextFilter = getYouTubeCompleteFilterChain(
+      {
+        hook,
+        context: explanation || caption || '',
+        contentPillar: contentPillar || 'Breaking',
+        videoDuration: duration,
+        addOutro: true,
+      },
+      finalCaptions.length > 0 ? finalCaptions : undefined
+    );
+
+    console.log('[worker] Running FFmpeg (YouTube 1920x1080)...');
+    let hasSubtitles = true;
+    try {
+      await trimAndCaptionVideoYouTube(inputPath, outputPath, startTime, duration, drawtextFilter);
+    } catch (renderError: any) {
+      console.error('[worker] YouTube render failed, retrying without captions:', renderError?.message);
+      hasSubtitles = false;
+      await trimAndCaptionVideoYouTube(inputPath, outputPath, startTime, duration, '');
+    }
+
+    const outputSizeMB = (fs.statSync(outputPath).size / 1024 / 1024).toFixed(1);
+    console.log(`[worker] Output: ${outputSizeMB}MB`);
+
+    const durationSeconds = await getVideoDuration(outputPath);
+
+    // Upload to final_videos_youtube bucket
+    console.log('[worker] Uploading to final_videos_youtube...');
+    const fileBuffer = fs.readFileSync(outputPath);
+    const storagePath = `${videoId}/final.mp4`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('final_videos_youtube')
+      .upload(storagePath, fileBuffer, {
+        contentType: 'video/mp4',
+        upsert: true,
+      });
+
+    if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+
+    const { data: urlData } = supabase.storage
+      .from('final_videos_youtube')
+      .getPublicUrl(storagePath);
+
+    const publicUrl = urlData.publicUrl;
+
+    // Save to youtube_videos_final table
+    await supabase.from('youtube_videos_final').insert({
+      id: videoId,
+      analysis_id: analysisId,
+      file_path: publicUrl,
+      final_video_path: storagePath,
+      status: 'ready',
+      has_subtitles: hasSubtitles,
+      duration_seconds: durationSeconds,
+      produced_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    console.log(`[worker] ✓ YouTube job complete. Video ID: ${videoId}`);
+    console.log(`[worker] URL: ${publicUrl}`);
+
+  } catch (err: any) {
+    console.error(`[worker] ✗ YouTube job failed: ${err.message}`);
+    try {
+      await supabase.from('youtube_videos_final').insert({
+        id: videoId,
+        analysis_id: analysisId,
+        status: 'failed',
+        error_message: err.message,
+        created_at: new Date().toISOString(),
+      });
+    } catch {}
+  } finally {
+    for (const p of [inputPath, outputPath]) {
+      try {
+        if (fs.existsSync(p)) fs.unlinkSync(p);
+      } catch {}
+    }
+    isProcessing = false;
+    console.log('[worker] ═══ YouTube job slot released ═══\n');
+  }
+});
