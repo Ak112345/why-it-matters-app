@@ -839,6 +839,9 @@ async function transcribeWithWhisper(filePath: string, startTime: number): Promi
     }
 
     const data: any = await res.json();
+    console.log('[worker] Whisper raw keys:', Object.keys(data));
+    console.log('[worker] Whisper word count:', data.words?.length ?? 'undefined');
+    
     const words: WordCaption[] = (data.words || [])
       .filter((w: any) => w.word && typeof w.start === 'number' && typeof w.end === 'number')
       .map((w: any) => ({
