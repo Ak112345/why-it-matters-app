@@ -1474,12 +1474,35 @@ app.post('/produce-youtube', requireSecret, async (req: express.Request, res: ex
 
     console.log(`[/produce-youtube] Processing job: ${body.analysisId}`);
 
-    // TODO: Implement actual video production logic
-    // For now, return a success response
+    // Call the /produce endpoint to actually generate the video
+    const produceBody = {
+      analysisId: body.analysisId,
+      sourceId: body.sourceId,
+      startTime: body.startTime || 0,
+      endTime: body.endTime || 10,
+      hook: body.hook || 'Why It Matters',
+      caption: body.caption,
+      explanation: body.explanation,
+      contentPillar: body.contentPillar,
+      viralityScore: body.viralityScore || 0,
+      captions: body.captions || [],
+    };
+
+    // Make internal request to /produce
+    const produceRes = await fetch(`http://localhost:${PORT}/produce`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-worker-secret': WORKER_SECRET,
+      },
+      body: JSON.stringify(produceBody),
+    });
+
+    const produceData = await produceRes.json();
+
     res.json({
       success: true,
-      videoId: `youtube_${body.analysisId}`,
-      message: 'Video production job queued',
+      ...produceData,
     });
   } catch (error: any) {
     console.error('[/produce-youtube] Error:', error.message);
