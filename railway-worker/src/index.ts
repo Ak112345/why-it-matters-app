@@ -815,7 +815,7 @@ function trimAndCaptionVideo(
   return new Promise((resolve, reject) => {
     const videoFilter = drawtextFilter
       ? drawtextFilter
-      : `scale=1080:608:force_original_aspect_ratio=decrease,pad=1080:1920:0:656:black`;
+      : `scale=1080:608:force_original_aspect_ratio=decrease:flags=lanczos,pad=1080:1920:0:656:black`;
 
     ffmpeg(inputPath)
       .seekInput(startTime)
