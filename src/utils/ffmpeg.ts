@@ -88,8 +88,8 @@ export async function produceVideo(options: ProduceVideoOptions): Promise<void> 
     const filters: string[] = [];
 
     if (crop) {
-      filters.push('scale=1080:1920:force_original_aspect_ratio=increase');
-      filters.push('crop=1080:1920');
+      filters.push('scale=1080:608:force_original_aspect_ratio=decrease');
+      filters.push('pad=1080:1920:0:656:black');
     }
 
     if (subtitlePath) {
