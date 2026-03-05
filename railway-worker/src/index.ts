@@ -1345,6 +1345,8 @@ app.post('/produce', requireSecret, async (req, res) => {
     endTime = 10,
     hook,
     caption,
+    explanation,
+    contentPillar,
     viralityScore = 0,
     captions = [],
   } = req.body;
