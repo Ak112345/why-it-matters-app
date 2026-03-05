@@ -12,6 +12,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { getCompleteFilterChain } from './brandTemplates';
+import FormData from 'form-data';
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 ffmpeg.setFfprobePath(ffprobeInstaller.path);
@@ -805,6 +806,55 @@ function buildDrawtextFilter(captions: WordCaption[], fallbackHook: string): str
   );
 }
 
+async function transcribeWithWhisper(filePath: string, startTime: number): Promise<WordCaption[]> {
+  const openaiApiKey = process.env.OPENAI_API_KEY;
+  if (!openaiApiKey) {
+    console.warn('[worker] OPENAI_API_KEY not set — skipping Whisper transcription');
+    return [];
+  }
+
+  try {
+    console.log('[worker] Transcribing with Whisper...');
+    const fileStream = fs.createReadStream(filePath);
+
+    const formData = new FormData();
+    formData.append('file', fileStream as any, { filename: 'clip.mp4', contentType: 'video/mp4' } as any);
+    formData.append('model', 'whisper-1');
+    formData.append('response_format', 'verbose_json');
+    formData.append('timestamp_granularities[]', 'word');
+
+    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${openaiApiKey}`,
+        ...formData.getHeaders(),
+      },
+      body: formData as any,
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`[worker] Whisper API error ${res.status}: ${errText}`);
+      return [];
+    }
+
+    const data: any = await res.json();
+    const words: WordCaption[] = (data.words || [])
+      .filter((w: any) => w.word && typeof w.start === 'number' && typeof w.end === 'number')
+      .map((w: any) => ({
+        word: w.word.trim(),
+        start: w.start,
+        end: w.end,
+      }));
+
+    console.log(`[worker] Whisper returned ${words.length} word captions`);
+    return words;
+  } catch (err: any) {
+    console.error('[worker] Whisper transcription failed:', err.message);
+    return [];
+  }
+}
+
 function trimAndCaptionVideo(
   inputPath: string,
   outputPath: string,
@@ -1334,6 +1384,16 @@ app.post('/produce', requireSecret, async (req, res) => {
     const inputSizeMB = (fs.statSync(inputPath).size / 1024 / 1024).toFixed(1);
     console.log(`[worker] Input file: ${inputSizeMB}MB`);
 
+    // Transcribe with Whisper (replaces captions from req.body)
+    let finalCaptions = captions;
+    if (process.env.OPENAI_API_KEY) {
+      const whisperCaptions = await transcribeWithWhisper(inputPath, startTime);
+      if (whisperCaptions.length > 0) {
+        finalCaptions = whisperCaptions;
+        console.log(`[worker] Using ${finalCaptions.length} Whisper captions`);
+      }
+    }
+
     const drawtextFilter = getCompleteFilterChain(
       {
         hook,
@@ -1342,7 +1402,7 @@ app.post('/produce', requireSecret, async (req, res) => {
         videoDuration: duration,
         addOutro: true,
       },
-      captions.length > 0 ? captions : undefined
+      finalCaptions.length > 0 ? finalCaptions : undefined
     );
     let hasSubtitles = true;
 
