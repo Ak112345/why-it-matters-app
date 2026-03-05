@@ -10,7 +10,7 @@ Video URL: ${options.videoUrl}${metadataText}
 
 Analyze this video clip and return:
 
-1. HOOK (first 3 seconds): One punchy sentence that creates curiosity or tension. Start with "Nobody's talking about..." or "This is bigger than you think..." or "Here's what actually happened..."
+1. HOOK (first 3 seconds): One punchy sentence that creates curiosity or urgency about what is VISUALLY shown in the clip. Do NOT use "Nobody's talking about" or generic openers. Make it specific to the actual content tags and title. Example: "This senate hearing just changed everything about healthcare" not "Nobody's talking about this policy change."
 2. EXPLANATION (10-30 seconds): 3-4 sentences giving the context behind what's shown. What is this? When? Why did it happen?
 3. IMPACT STATEMENT (5-10 seconds): 1-2 sentences on why this matters today. Connect to current events if possible.
 4. CAPTION: 150 characters max. Include the core topic and one emotional trigger word.
@@ -20,6 +20,8 @@ Analyze this video clip and return:
 8. PACING: Fast | Medium | Slow.
 9. EMOTION TAG: Outrage | Empathy | Curiosity | Shock | Pride | Sadness | Inspiration | Humor.
 10. EVERGREEN or TRENDING: Will this be relevant in 6 months?
+
+CRITICAL: Your hook, explanation and impact_statement MUST relate directly to the visual content described by these tags and title. Do not invent unrelated topics or use generic political framing if the tags don't support it.
 
 Respond in JSON with keys: hook, explanation, impact_statement, caption, hashtags_instagram, hashtags_youtube, hashtags_facebook, content_pillar, platform_scores, pacing, emotion_tag, evergreen_or_trending.`;
 }
