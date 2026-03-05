@@ -1384,15 +1384,10 @@ app.post('/produce', requireSecret, async (req, res) => {
     const inputSizeMB = (fs.statSync(inputPath).size / 1024 / 1024).toFixed(1);
     console.log(`[worker] Input file: ${inputSizeMB}MB`);
 
-    // Transcribe with Whisper (replaces captions from req.body)
-    let finalCaptions = captions;
-    if (process.env.OPENAI_API_KEY) {
-      const whisperCaptions = await transcribeWithWhisper(inputPath, startTime);
-      if (whisperCaptions.length > 0) {
-        finalCaptions = whisperCaptions;
-        console.log(`[worker] Using ${finalCaptions.length} Whisper captions`);
-      }
-    }
+    // Run Whisper transcription on the downloaded clip
+    const whisperCaptions = await transcribeWithWhisper(inputPath, startTime);
+    const finalCaptions = whisperCaptions.length > 0 ? whisperCaptions : captions;
+    console.log(`[worker] Using ${finalCaptions.length} captions (${whisperCaptions.length > 0 ? 'Whisper' : 'fallback from request'})`);
 
     const drawtextFilter = getCompleteFilterChain(
       {
