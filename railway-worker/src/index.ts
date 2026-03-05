@@ -1,4 +1,4 @@
-// cache-bust: 2026-03-04
+// cache-bust: 2026-03-05
 // railway-worker/src/index.ts
 // Express + FFmpeg worker — trims Pexels clips, burns captions, uploads to Supabase
 
@@ -6,13 +6,13 @@ import express from 'express';
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import ffprobeInstaller from '@ffprobe-installer/ffprobe';
 import ffmpeg from 'fluent-ffmpeg';
+import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { getCompleteFilterChain } from './brandTemplates';
-import FormData from 'form-data';
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 ffmpeg.setFfprobePath(ffprobeInstaller.path);
@@ -546,7 +546,6 @@ async function postYoutubeForJob(body: PostRequestBody): Promise<any> {
       youtube_url: youtube.url,
     });
 
-    // Sync analytics to Supabase (async, don't wait to block response)
     syncPostAnalytics(jobId).catch((err) => console.error('Analytics sync error:', err));
 
     return youtube;
@@ -618,8 +617,6 @@ async function postMetaForJob(body: PostRequestBody): Promise<any> {
       fb_post_id: facebook.postId,
     });
 
-    // Sync analytics to Supabase for both platforms (async, don't wait to block response)
-    // Note: for Meta, we sync Instagram first; Facebook sync can happen on next refresh
     syncPostAnalytics(jobId).catch((err) => console.error('Analytics sync error:', err));
 
     return {
@@ -673,6 +670,7 @@ app.get('/debug', (_req, res) => {
     ffmpegPath: ffmpegInstaller.path,
     ffmpegVersion: ffmpegInstaller.version,
     ffmpegBinarySize: ffmpegSizeMB,
+    openaiConfigured: !!process.env.OPENAI_API_KEY,
     memInfo: memInfo.split('\n'),
     diskInfo,
     nodeMemory: {
@@ -776,7 +774,6 @@ function buildDrawtextFilter(captions: WordCaption[], fallbackHook: string): str
       .join(',');
   }
 
-  // Before building drawtext, wrap the hook into lines of max 35 chars
   const words = fallbackHook.split(' ');
   const lines: string[] = [];
   let current = '';
@@ -817,99 +814,174 @@ function buildDrawtextFilter(captions: WordCaption[], fallbackHook: string): str
   );
 }
 
-async function transcribeWithWhisper(filePath: string, startTime: number): Promise<WordCaption[]> {
-  const openaiApiKey = process.env.OPENAI_API_KEY;
-  if (!openaiApiKey) {
+function getOpenAIClient(): OpenAI | null {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+  return new OpenAI({ apiKey });
+}
+
+async function extractAudioSegmentForWhisper(inputPath: string, startTime: number, duration: number): Promise<string> {
+  const audioPath = path.join(os.tmpdir(), `wim_whisper_${uuidv4()}.wav`);
+
+  return new Promise((resolve, reject) => {
+    let stderrLog = '';
+
+    ffmpeg(inputPath)
+      .seekInput(startTime)
+      .duration(duration)
+      .noVideo()
+      .audioCodec('pcm_s16le')
+      .audioChannels(1)
+      .audioFrequency(16000)
+      .format('wav')
+      .on('start', cmd => console.log('[worker] Whisper prep FFmpeg command:', cmd))
+      .on('stderr', line => {
+        stderrLog += line + '\n';
+      })
+      .on('end', () => {
+        console.log(`[worker] Whisper prep audio ready: ${audioPath}`);
+        resolve(audioPath);
+      })
+      .on('error', (err, _stdout, stderr) => {
+        console.error('[worker] Whisper prep FFmpeg stderr:', stderr || stderrLog || err.message);
+        reject(new Error(`Failed to extract audio for Whisper: ${stderr || stderrLog || err.message}`));
+      })
+      .save(audioPath);
+  });
+}
+
+async function transcribeWithWhisper(inputPath: string, startTime: number, duration: number): Promise<WordCaption[]> {
+  const openai = getOpenAIClient();
+  if (!openai) {
     console.warn('[worker] OPENAI_API_KEY not set — skipping Whisper transcription');
     return [];
   }
 
+  let audioPath: string | null = null;
+
   try {
+    console.log('[worker] Preparing clipped audio for Whisper...');
+    audioPath = await extractAudioSegmentForWhisper(inputPath, startTime, duration);
+
+    const audioStats = fs.statSync(audioPath);
+    console.log(`[worker] Whisper audio file: ${(audioStats.size / 1024 / 1024).toFixed(2)}MB`);
+
     console.log('[worker] Transcribing with Whisper...');
-    const fileStream = fs.createReadStream(filePath);
+    const data: any = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(audioPath),
+      model: 'whisper-1',
+      response_format: 'verbose_json',
+      timestamp_granularities: ['word'],
+    } as any);
 
-    const formData = new FormData();
-    formData.append('file', fileStream as any, { filename: 'clip.mp4', contentType: 'video/mp4' } as any);
-    formData.append('model', 'whisper-1');
-    formData.append('response_format', 'verbose_json');
-    formData.append('timestamp_granularities[]', 'word');
+    console.log('[worker] Whisper raw keys:', Object.keys(data || {}));
+    console.log('[worker] Whisper word count:', data?.words?.length ?? 'undefined');
 
-    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${openaiApiKey}`,
-        ...formData.getHeaders(),
-      },
-      body: formData as any,
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error(`[worker] Whisper API error ${res.status}: ${errText}`);
-      return [];
-    }
-
-    const data: any = await res.json();
-    console.log('[worker] Whisper raw keys:', Object.keys(data));
-    console.log('[worker] Whisper word count:', data.words?.length ?? 'undefined');
-    
-    const words: WordCaption[] = (data.words || [])
+    const words: WordCaption[] = (data?.words || [])
       .filter((w: any) => w.word && typeof w.start === 'number' && typeof w.end === 'number')
       .map((w: any) => ({
-        word: w.word.trim(),
-        start: w.start,
-        end: w.end,
-      }));
+        word: String(w.word).trim(),
+        start: Math.max(0, Number(w.start)),
+        end: Math.max(0, Number(w.end)),
+      }))
+      .filter((w: WordCaption) => w.word && w.end > w.start);
 
     console.log(`[worker] Whisper returned ${words.length} word captions`);
     return words;
   } catch (err: any) {
-    console.error('[worker] Whisper transcription failed:', err.message);
+    console.error('[worker] Whisper transcription failed:', err?.message || err);
+    if (err?.status) console.error('[worker] Whisper status:', err.status);
+    if (err?.response?.data) console.error('[worker] Whisper response data:', err.response.data);
     return [];
+  } finally {
+    if (audioPath) {
+      try {
+        if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
+      } catch {}
+    }
   }
 }
 
-function trimAndCaptionVideo(
+async function hasAudioStream(filePath: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(filePath, (err, metadata) => {
+      if (err) {
+        console.warn('[worker] ffprobe audio check failed, assuming no audio:', err.message);
+        resolve(false);
+        return;
+      }
+
+      const audioStreams = (metadata.streams || []).filter((s: any) => s.codec_type === 'audio');
+      resolve(audioStreams.length > 0);
+    });
+  });
+}
+
+async function trimAndCaptionVideo(
   inputPath: string,
   outputPath: string,
   startTime: number,
   duration: number,
   drawtextFilter: string
 ): Promise<void> {
+  const videoHasAudio = await hasAudioStream(inputPath);
+  console.log(`[worker] Input audio stream present: ${videoHasAudio}`);
+
   return new Promise((resolve, reject) => {
     const videoFilter = drawtextFilter
       ? drawtextFilter
       : `scale=1080:608:force_original_aspect_ratio=decrease:flags=lanczos,pad=1080:1920:0:656:black`;
 
-    ffmpeg(inputPath)
+    let stderrLog = '';
+
+    const command = ffmpeg(inputPath)
       .seekInput(startTime)
       .duration(duration)
-      .videoFilter(videoFilter)
+      .input('anullsrc=r=44100:cl=stereo')
+      .inputFormat('lavfi')
+      .videoFilters(videoFilter)
       .videoCodec('libx264')
-      .addOption('-preset', 'fast')
-      .addOption('-crf', '23')
-      .addOption('-pix_fmt', 'yuv420p')
-      .addOption('-threads', '2')
-      .addOption('-movflags', '+faststart')
-      .addOption('-fs', '50M')
-      .addOption('-f', 'lavfi')
-      .addOption('-i', 'anullsrc=r=44100:cl=stereo')
-      .addOption('-filter_complex', '[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=0[aout]')
-      .addOption('-map', '0:v')
-      .addOption('-map', '[aout]')
-      .addOption('-c:a', 'aac')
-      .addOption('-b:a', '128k')
-      .addOption('-shortest')
+      .audioCodec('aac')
+      .outputOptions([
+        '-preset fast',
+        '-crf 23',
+        '-pix_fmt yuv420p',
+        '-threads 2',
+        '-movflags +faststart',
+        '-fs 50M',
+        '-b:a 128k',
+        '-shortest',
+      ]);
+
+    if (videoHasAudio) {
+      command
+        .complexFilter(['[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=0[aout]'])
+        .outputOptions([
+          '-map 0:v:0',
+          '-map [aout]',
+        ]);
+    } else {
+      command.outputOptions([
+        '-map 0:v:0',
+        '-map 1:a:0',
+      ]);
+    }
+
+    command
       .output(outputPath)
       .on('start', cmd => console.log('[worker] FFmpeg command:', cmd))
+      .on('stderr', line => {
+        stderrLog += line + '\n';
+      })
       .on('progress', p => console.log(`[worker] FFmpeg progress: ${p.percent?.toFixed(0) ?? '?'}%`))
       .on('end', () => {
         console.log('[worker] FFmpeg finished');
         resolve();
       })
-      .on('error', (err, _stdout, stderr) => {
-        console.error('[worker] FFmpeg stderr:', stderr);
-        reject(new Error(`FFmpeg failed: ${err.message}`));
+      .on('error', (err, stdout, stderr) => {
+        const combined = stderr || stderrLog || stdout || err.message;
+        console.error('[worker] FFmpeg stderr:', combined);
+        reject(new Error(`FFmpeg failed: ${combined}`));
       })
       .run();
   });
@@ -921,7 +993,7 @@ async function getVideoDuration(filePath: string): Promise<number> {
       if (err) {
         console.error('[worker] ffprobe error:', err);
         console.log('[worker] Defaulting to 10 seconds since ffprobe failed');
-        resolve(10); // Default to 10 seconds if ffprobe fails
+        resolve(10);
         return;
       }
       const duration = metadata.format.duration || 10;
@@ -944,7 +1016,6 @@ async function uploadToSupabase(filePath: string, videoId: string): Promise<{ pu
 
   if (error) throw new Error(`Supabase upload failed: ${error.message}`);
 
-  // Verify upload succeeded by checking metadata
   console.log('[worker] Verifying upload...');
   const { data: metadata, error: metadataError } = await supabase.storage
     .from('final_videos')
@@ -1115,7 +1186,7 @@ async function fetchInstagramStats(mediaId: string, accessToken: string): Promis
 
     const data = await response.json();
     const insights = data.insights?.data || [];
-    
+
     const insightMap: { [key: string]: number } = {};
     insights.forEach((insight: any) => {
       insightMap[insight.name] = insight.values?.[0]?.value || 0;
@@ -1126,7 +1197,7 @@ async function fetchInstagramStats(mediaId: string, accessToken: string): Promis
       reach: insightMap.reach || 0,
       likes: data.like_count || 0,
       comments: data.comments_count || 0,
-      shares: 0, // Instagram API doesn't expose share count
+      shares: 0,
       saves: insightMap.saves || 0,
     };
   } catch (error: any) {
@@ -1169,7 +1240,6 @@ async function fetchFacebookStats(postId: string, accessToken: string): Promise<
 
 async function syncPostAnalytics(jobId: string): Promise<void> {
   try {
-    // Fetch job details
     const { data: job, error: jobError } = await supabase
       .from('posting_queue')
       .select('*')
@@ -1183,7 +1253,6 @@ async function syncPostAnalytics(jobId: string): Promise<void> {
     const { platform, youtube_video_id, ig_media_id, fb_post_id, posted_at } = job;
     const now = new Date().toISOString();
 
-    // Determine which platform and fetch stats
     let stats: any = {
       job_id: jobId,
       platform,
@@ -1229,7 +1298,6 @@ async function syncPostAnalytics(jobId: string): Promise<void> {
       }
     }
 
-    // Calculate totals and engagement rate
     const totalViews = (stats.youtube_views || 0) + (stats.ig_impressions || 0) + (stats.fb_views || 0);
     const totalEngagements =
       (stats.youtube_likes || 0) +
@@ -1246,7 +1314,6 @@ async function syncPostAnalytics(jobId: string): Promise<void> {
     stats.total_engagements = totalEngagements;
     stats.engagement_rate = totalViews > 0 ? ((totalEngagements / totalViews) * 100).toFixed(2) : 0;
 
-    // Insert or update in post_analytics table
     const { error: insertError } = await supabase.from('post_analytics').upsert(
       [{ job_id: jobId, ...stats }],
       { onConflict: 'job_id' }
@@ -1263,7 +1330,6 @@ async function syncPostAnalytics(jobId: string): Promise<void> {
     });
   } catch (error: any) {
     console.error('SYNC_ANALYTICS_ERROR', { jobId, error: error.message });
-    // Don't throw - analytics sync failure shouldn't block posting
     await logJobEvent(jobId, 'error', 'analytics_sync_failed', { error: error.message }).catch(() => {});
   }
 }
@@ -1297,12 +1363,10 @@ app.post('/post/all', requireSecret, async (req, res) => {
   }
 });
 
-// Periodic stats refresh endpoint
 app.post('/stats/refresh', requireSecret, async (req, res) => {
   try {
     const { hoursOld = 2, daysBack = 7 } = req.body || {};
-    
-    // Find posts that haven't been synced in N hours, posted in last N days
+
     const cutoffDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString();
     const syncCutoffDate = new Date(Date.now() - hoursOld * 60 * 60 * 1000).toISOString();
 
@@ -1383,7 +1447,7 @@ app.post('/produce', requireSecret, async (req, res) => {
   console.log(`[worker] Analysis: ${analysisId}`);
   console.log(`[worker] Pexels ID: ${pexelsId}`);
   console.log(`[worker] Segment: ${startTime}s → ${endTime}s`);
-  console.log(`[worker] Captions: ${captions.length} words from Whisper`);
+  console.log(`[worker] Captions: ${captions.length} words from request`);
   console.log(`[worker] Hook: ${hook}`);
 
   res.json({ success: true, videoId, message: 'Job started' });
@@ -1400,8 +1464,7 @@ app.post('/produce', requireSecret, async (req, res) => {
     const inputSizeMB = (fs.statSync(inputPath).size / 1024 / 1024).toFixed(1);
     console.log(`[worker] Input file: ${inputSizeMB}MB`);
 
-    // Run Whisper transcription on the downloaded clip
-    const whisperCaptions = await transcribeWithWhisper(inputPath, startTime);
+    const whisperCaptions = await transcribeWithWhisper(inputPath, startTime, duration);
     const finalCaptions = whisperCaptions.length > 0 ? whisperCaptions : captions;
     console.log(`[worker] Using ${finalCaptions.length} captions (${whisperCaptions.length > 0 ? 'Whisper' : 'fallback from request'})`);
 
@@ -1415,13 +1478,14 @@ app.post('/produce', requireSecret, async (req, res) => {
       },
       finalCaptions.length > 0 ? finalCaptions : undefined
     );
+
     let hasSubtitles = true;
 
     console.log('[worker] Running FFmpeg...');
     try {
       await trimAndCaptionVideo(inputPath, outputPath, startTime, duration, drawtextFilter);
     } catch (renderError: any) {
-      console.error('[worker] Drawtext render failed, retrying without subtitles:', renderError?.message || renderError);
+      console.error('[worker] Subtitle render failed, retrying without subtitles:', renderError?.message || renderError);
       hasSubtitles = false;
       await trimAndCaptionVideo(inputPath, outputPath, startTime, duration, '');
     }
@@ -1447,6 +1511,7 @@ app.post('/produce', requireSecret, async (req, res) => {
       durationSeconds,
       hasSubtitles
     );
+
     console.log(`[worker] ✓ Job complete. Video ID: ${videoId}`);
   } catch (err: any) {
     console.error(`[worker] ✗ Job failed: ${err.message}`);
@@ -1475,17 +1540,16 @@ app.post('/produce', requireSecret, async (req, res) => {
 app.post('/produce-youtube', requireSecret, async (req: express.Request, res: express.Response) => {
   try {
     const body = req.body as PostRequestBody;
-    
+
     if (!body.analysisId || !body.sourceId) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Missing required fields: analysisId, sourceId' 
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: analysisId, sourceId',
       });
     }
 
     console.log(`[/produce-youtube] Processing job: ${body.analysisId}`);
 
-    // Call the /produce endpoint to actually generate the video
     const produceBody = {
       analysisId: body.analysisId,
       sourceId: body.sourceId,
@@ -1499,7 +1563,6 @@ app.post('/produce-youtube', requireSecret, async (req: express.Request, res: ex
       captions: body.captions || [],
     };
 
-    // Make internal request to /produce
     const produceRes = await fetch(`http://localhost:${PORT}/produce`, {
       method: 'POST',
       headers: {
@@ -1509,15 +1572,18 @@ app.post('/produce-youtube', requireSecret, async (req: express.Request, res: ex
       body: JSON.stringify(produceBody),
     });
 
-    const produceData = await produceRes.json();
+    const produceText = await produceRes.text();
+    let produceData: any = {};
+    try {
+      produceData = produceText ? JSON.parse(produceText) : {};
+    } catch {
+      produceData = { raw: produceText };
+    }
 
-    res.json({
-      success: true,
-      ...produceData,
-    });
+    return res.status(produceRes.status).json(produceData);
   } catch (error: any) {
     console.error('[/produce-youtube] Error:', error.message);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: error.message || 'Failed to produce YouTube video',
     });
