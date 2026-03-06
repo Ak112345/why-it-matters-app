@@ -3,7 +3,7 @@
  */
 
 import { ENV } from '../../utils/env';
-
+const PAUSE_STOCK_FETCH = true; //strage over crowded with too many videos, pause for now
 const MIN_DURATION = 30;
 const MAX_DURATION = 60;
 
@@ -19,11 +19,17 @@ export async function fetchPixabayLongClip(
   query: string,
   topic: string
 ): Promise<LongFormClip | null> {
+
+  if (PAUSE_STOCK_FETCH) {
+    console.log('[pixabayLong] Stock clip fetching paused');
+    return null;
+  }
+
   if (!ENV.PIXABAY_USERNAME) {
     console.warn('[pixabayLong] PIXABAY_USERNAME not set');
     return null;
   }
-
+  
   try {
     const url = new URL('https://pixabay.com/api/videos/');
     url.searchParams.set('key', ENV.PIXABAY_USERNAME);

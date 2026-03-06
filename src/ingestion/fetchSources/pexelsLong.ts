@@ -3,7 +3,7 @@
  */
 
 import { ENV } from '../../utils/env';
-
+const PAUSE_STOCK_FETCH = true; //strage over crowded with too many videos, pause for now
 const MIN_DURATION = 30;
 const MAX_DURATION = 60;
 
@@ -19,6 +19,12 @@ export async function fetchPexelsLongClip(
   query: string,
   topic: string
 ): Promise<LongFormClip | null> {
+
+  if (PAUSE_STOCK_FETCH) {
+    console.log('[pexelsLong] Stock clip fetching paused');
+    return null;
+  }
+
   if (!ENV.PEXELS_API_KEY) {
     console.warn('[pexelsLong] PEXELS_API_KEY not set');
     return null;
