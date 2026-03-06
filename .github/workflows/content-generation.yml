@@ -4,6 +4,8 @@ on:
   schedule:
     # Run at 9 AM UTC daily (morning post)
     - cron: '0 9 * * *'
+    # Run at 10:59 AM UTC daily (YouTube post)
+    - cron: '59 10 * * *'
     # Run at 1 PM UTC daily (midday post)
     - cron: '0 13 * * *'
     # Run at 7 PM UTC daily (evening post)
@@ -15,22 +17,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger content generation
-          run: |
-            echo "=== BASIC ==="
-            uname -a
-            echo "=== DISK ==="
-            df -h
-            echo "=== MEMORY ==="
-            free -h || true
-            echo "=== FFMPEG ==="
-            which ffmpeg || true
-            ffmpeg -version || true
-            echo "=== FILES HERE ==="
-            ls -lah
-            set -e
-            curl -fsS "${{ secrets.VERCEL_PRODUCTION_URL }}/api/content/generate?secret=${{ secrets.VERCEL_CRON_SECRET }}"
-      - name: Trigger YouTube content test run
-        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "=== BASIC ==="
+          uname -a
+          echo "=== DISK ==="
+          df -h
+          echo "=== MEMORY ==="
+          free -h || true
+          echo "=== FFMPEG ==="
+          which ffmpeg || true
+          ffmpeg -version || true
+          echo "=== FILES HERE ==="
+          ls -lah
+          set -e
+          curl -fsS "${{ secrets.VERCEL_PRODUCTION_URL }}/api/content/generate"
+      - name: Trigger YouTube post
+        if: github.event.schedule == '59 10 * * *' || github.event_name == 'workflow_dispatch'
         run: |
           set -e
-          curl -fsS "${{ secrets.VERCEL_PRODUCTION_URL }}/api/content/generate?platform=youtube&test=true&secret=${{ secrets.VERCEL_CRON_SECRET }}"
+          curl -fsS "${{ secrets.VERCEL_PRODUCTION_URL }}/api/publish/cron"
